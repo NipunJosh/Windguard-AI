@@ -112,6 +112,7 @@ async def startup_event():
         print(f"Startup check failed: {e}")
 
 @app.get("/health")
+@app.head("/health")
 def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
