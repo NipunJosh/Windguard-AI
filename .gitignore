@@ -1,0 +1,18 @@
+# Environment Variables
+.env
+
+# Virtual Environments
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Local Data and Logs
+backend/history.db
+hourlyLoadDataIndia.xlsx
+*.log
+
+# Node & Frontend Build
+node_modules/
+.DS_Store

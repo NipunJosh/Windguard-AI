@@ -1,0 +1,13 @@
+{
+    "name": "wind-energy-decision-support",
+    "version": "1.0.0",
+    "description": "Real-Time AI-Based Wind Energy Decision Support System",
+    "main": "index.html",
+    "scripts": {
+        "dev": "vite frontend --port 3000",
+        "backend": "python -m backend.main"
+    },
+    "devDependencies": {
+        "vite": "^5.4.21"
+    }
+}
