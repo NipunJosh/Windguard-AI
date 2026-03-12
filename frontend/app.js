@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:18888';
+const API_BASE = 'https://windguard-backend.onrender.com';
 
 document.addEventListener('DOMContentLoaded', () => {
     updateTime();
