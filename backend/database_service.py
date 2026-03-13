@@ -55,7 +55,9 @@ class DatabaseService:
         df = pd.read_sql_query(query, self.engine)
         # Ensure timestamp is datetime and sort ascending for lag calculation
         if not df.empty:
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            # Pandas struggles when row 1 is space-separated but row 2 is 'T'-separated.
+            # Using format='mixed' forces it to infer the format for each row individually.
+            df['timestamp'] = pd.to_datetime(df['timestamp'], format='mixed')
             df = df.sort_values('timestamp')
         return df
 
