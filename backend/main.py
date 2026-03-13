@@ -24,57 +24,52 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-async def background_sync_task():
-    print("Background 1-hour sync task started.")
-    while True:
-        # We MUST poll every 1 hour to keep the 168-hour continuous Lag memory accurate for the ML Model.
-        # But we will downsample the UI chart to show 12-hour cycles.
-        await asyncio.sleep(3600) 
+@app.get("/api/cron/sync")
+async def trigger_cron_sync():
+    print("External Cron triggered 1-hour background sync for Coimbatore...")
+    try:
+        # 1. Fetch weather for Coimbatore
+        weather = await weather_service.get_weather("Coimbatore, IN")
+        dt = datetime.now()
         
-        try:
-            print("Running 1-hour background sync for Coimbatore...")
-            # 1. Fetch weather for Coimbatore
-            weather = await weather_service.get_weather("Coimbatore, IN")
-            dt = datetime.now()
+        # 2. Get Lags
+        hist_df = db_service.get_recent_records(168)
+        
+        # 3. Predict Demand
+        demand_feats = pipeline.create_demand_features(dt, hist_df)
+        demand_pred_scaled = float(loader.predict("demand_model", demand_feats)[0])
+        scaler = loader.models.get("demand_scaler")
+        if scaler:
+            demand_pred_mw = float(scaler.inverse_transform([[demand_pred_scaled]])[0][0])
+        else:
+            demand_pred_mw = demand_pred_scaled
             
-            # 2. Get Lags
-            hist_df = db_service.get_recent_records(168)
-            
-            # 3. Predict Demand
-            demand_feats = pipeline.create_demand_features(dt, hist_df)
-            demand_pred_scaled = float(loader.predict("demand_model", demand_feats)[0])
-            scaler = loader.models.get("demand_scaler")
-            if scaler:
-                demand_pred_mw = float(scaler.inverse_transform([[demand_pred_scaled]])[0][0])
-            else:
-                demand_pred_mw = demand_pred_scaled
-                
-            # 4. Predict Price
-            price_feats = pipeline.create_price_features(dt, weather, demand_pred_scaled, hist_df)
-            price_pred = float(loader.predict("price_model", price_feats)[0])
-            
-            # 5. Save loop record 
-            db_service.insert_record(
-                timestamp=dt,
-                demand=demand_pred_mw,
-                price=price_pred,
-                wind_speed=weather["wind_speed"],
-                temp=weather["temp"]
-            )
-            # The user requested NOT to delete records from the DB, so we removed delete_oldest_record()
-            print("Background sync successful.")
-            
-        except Exception as e:
-            print(f"Background sync error: {e}")
-            await asyncio.sleep(60)
+        # 4. Predict Price
+        price_feats = pipeline.create_price_features(dt, weather, demand_pred_scaled, hist_df)
+        price_pred = float(loader.predict("price_model", price_feats)[0])
+        
+        # 5. Save loop record 
+        db_service.insert_record(
+            timestamp=dt,
+            demand=demand_pred_mw,
+            price=price_pred,
+            wind_speed=weather["wind_speed"],
+            temp=weather["temp"]
+        )
+        print("Cron sync successful.")
+        return {"status": "success", "timestamp": dt.isoformat()}
+        
+    except Exception as e:
+        print(f"Cron sync error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.on_event("startup")
 async def startup_event():
     # 1. Load ML Models
     loader.load_all()
     
-    # Start the 12-hour rolling background task
-    asyncio.create_task(background_sync_task())
+    # Intentionally removed the broken infinite asyncio task. 
+    # The database feeder is now natively triggered by the /api/cron/sync endpoint.
     
     # 2. Auto-Bootstrap check
     try:
