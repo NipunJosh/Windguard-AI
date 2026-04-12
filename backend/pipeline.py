@@ -55,15 +55,12 @@ class FeaturePipeline:
         }
         return pd.DataFrame([features])
 
-    def create_price_features(self, dt: datetime, weather: Dict[str, Any], demand_pred_scaled: float, hist_df: pd.DataFrame) -> pd.DataFrame:
+    def create_price_features(self, dt: datetime, weather: Dict[str, Any], demand_pred: float, hist_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Features: WS_10m, Temp_2m, hour, month, is_weekend, summer_peak, price_rolling_24, demand_pred
+        Features: WS_10m, Temp_2m, hour, month, is_weekend, summer_peak, demand_pred
         """
         is_weekend = 1 if dt.weekday() >= 5 else 0
         summer_peak = 1 if dt.month in [4, 5, 6] and 10 <= dt.hour <= 16 else 0
-        
-        # Calculate 24h rolling price average from hist_df
-        rolling_24 = hist_df['price'].tail(24).mean() if not hist_df.empty else 3500.0
         
         features = {
             "WS_10m": weather["wind_speed"],
@@ -72,10 +69,9 @@ class FeaturePipeline:
             "month": dt.month,
             "is_weekend": is_weekend,
             "summer_peak": summer_peak,
-            "price_rolling_24": rolling_24,
-            "demand_pred_scaled": demand_pred_scaled
+            "demand_pred": demand_pred
         }
-        cols = ['WS_10m', 'Temp_2m', 'hour', 'month', 'is_weekend', 'summer_peak', 'price_rolling_24', 'demand_pred_scaled']
+        cols = ['WS_10m', 'Temp_2m', 'hour', 'month', 'is_weekend', 'summer_peak', 'demand_pred']
         return pd.DataFrame([features])[cols]
 
     def create_loss_features(self, dt: datetime, weather: Dict[str, Any], demand_pred_scaled: float, demand_pred_mw: float, 
