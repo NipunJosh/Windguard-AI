@@ -1,4 +1,5 @@
 const API_BASE = 'https://windguard-backend.onrender.com';
+let latestDashboardData = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     updateTime();
@@ -73,6 +74,8 @@ async function fetchData() {
 }
 
 function updateUI(data) {
+    latestDashboardData = data;
+    
     // 1. Update KPI Cards
     const kpiContainer = document.getElementById('kpi-containers');
     kpiContainer.innerHTML = '';
@@ -251,12 +254,25 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingMsg.textContent = 'Thinking...';
         chatMessages.appendChild(loadingMsg);
         chatMessages.scrollTop = chatMessages.scrollHeight;
+        
+        const payload = {
+            message: text,
+            context: latestDashboardData ? {
+                wind_speed: latestDashboardData.weather?.wind_speed,
+                temperature: latestDashboardData.weather?.temp,
+                generation_mw: latestDashboardData.generation_forecast_mw,
+                demand_mw: latestDashboardData.demand_forecast_mw,
+                price_inr: latestDashboardData.kpis.find(k => k.label === "Electricity Price")?.value,
+                risk_level: latestDashboardData.risk_level,
+                loss_mw: latestDashboardData.kpis.find(k => k.label === "Energy Loss")?.value
+            } : null
+        };
 
         try {
             const response = await fetch(`${API_BASE}/api/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: text })
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) throw new Error('Chat failed');

@@ -138,10 +138,25 @@ def get_history():
 @app.post("/api/chat")
 async def chat_endpoint(chat_input: ChatMessage):
     try:
+        context_str = "No LIVE telemetry data is currently available."
+        if chat_input.context:
+            context_str = f"""
+            - Wind Speed: {chat_input.context.wind_speed} m/s
+            - Temperature: {chat_input.context.temperature} C
+            - Current Generation: {chat_input.context.generation_mw} MW
+            - Grid Demand: {chat_input.context.demand_mw} MW
+            - Electricity Price: {chat_input.context.price_inr} INR/MWh
+            - Risk Level: {chat_input.context.risk_level}
+            - Energy Loss: {chat_input.context.loss_mw} MW
+            """
+            
         prompt = f"""
         You are an intelligent AI assistant for the WindGuard AI dashboard. 
         You specialize in answering questions about wind energy, power prediction, Grid optimization, 
         and the data on this dashboard. Be concise, professional, and directly address the user's inquiry.
+        
+        [LIVE DASHBOARD TELEMETRY CONTEXT]
+        {context_str}
         
         User question: {chat_input.message}
         """

@@ -32,5 +32,16 @@ class DashboardData(BaseModel):
     demand_forecast_mw: float
     revenue_loss_estimate: float
 
+class ChatContext(BaseModel):
+    wind_speed: Optional[float] = None
+    temperature: Optional[float] = None
+    generation_mw: Optional[float] = None
+    demand_mw: Optional[float] = None
+    price_inr: Optional[float] = None
+    risk_level: Optional[str] = None
+    loss_mw: Optional[float] = None
+
 class ChatMessage(BaseModel):
     message: str
+    context: Optional[ChatContext] = None
+
