@@ -12,13 +12,13 @@ from .weather_service import weather_service
 from .models_loader import loader
 from .pipeline import pipeline
 from .calculator import calculator
-from .database_service import db_service
-
 try:
     import google.generativeai as genai
     GENAI_AVAILABLE = True
 except ImportError:
-    GENAI_AVAILABLE = False
+    pass
+
+from .openrouter_service import fetch_openrouter_response
 
 app = FastAPI(title="Wind Energy Decision Support System")
 
@@ -135,17 +135,7 @@ def get_history():
 
 @app.post("/api/chat")
 async def chat_endpoint(chat_input: ChatMessage):
-    if not GENAI_AVAILABLE:
-        return {"reply": "GenAI module not installed."}
-    
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        return {"reply": "Error: GEMINI_API_KEY not configured."}
-        
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        
         prompt = f"""
         You are an intelligent AI assistant for the WindGuard AI dashboard. 
         You specialize in answering questions about wind energy, power prediction, Grid optimization, 
@@ -153,9 +143,11 @@ async def chat_endpoint(chat_input: ChatMessage):
         
         User question: {chat_input.message}
         """
-        response = await asyncio.to_thread(model.generate_content, prompt)
-        return {"reply": response.text.strip()}
+        response_text = await fetch_openrouter_response(prompt, json_format=False)
+        return {"reply": response_text.strip()}
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Chat API Error: {e}")
         return {"reply": "Sorry, I am having trouble connecting to my servers right now."}
 
