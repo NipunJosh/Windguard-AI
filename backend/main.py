@@ -13,11 +13,12 @@ from .models_loader import loader
 from .pipeline import pipeline
 from .calculator import calculator
 from .database_service import db_service
-import urllib.request
-import urllib.error
-import json
 
-GENAI_AVAILABLE = True # Bypassing for OpenRouter
+try:
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
 
 app = FastAPI(title="Wind Energy Decision Support System")
 
@@ -141,57 +142,19 @@ async def chat_endpoint(chat_input: ChatMessage):
     if not api_key:
         return {"reply": "Error: GEMINI_API_KEY not configured."}
         
-        try:
-            url = "https://openrouter.ai/api/v1/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://windguard.com",
-                "X-Title": "WindGuard AI"
-            }
-            
-            prompt = f"""
-            You are an intelligent AI assistant for the WindGuard AI dashboard. 
-            You specialize in answering questions about wind energy, power prediction, Grid optimization, 
-            and the data on this dashboard. Be concise, professional, and directly address the user's inquiry.
-            
-            User question: {chat_input.message}
-            """
-            
-            models_to_try = [
-                "google/gemma-4-26b-a4b-it",
-                "meta-llama/llama-3.1-8b-instruct:free",
-                "mistralai/mistral-7b-instruct:free",
-                "google/gemini-2.0-flash-lite-preview-02-05:free"
-            ]
-            
-            reply = None
-            for model_name in models_to_try:
-                payload = {
-                    "model": model_name,
-                    "messages": [{"role": "user", "content": prompt}]
-                }
-                
-                req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
-                
-                def fetch_chat(req_obj):
-                    with urllib.request.urlopen(req_obj) as resp:
-                        return json.loads(resp.read().decode('utf-8'))
-                        
-                try:
-                    response_data = await asyncio.to_thread(fetch_chat, req)
-                    if 'choices' in response_data:
-                        reply = response_data['choices'][0]['message']['content'].strip()
-                        print(f"Chat API: Success with {model_name}")
-                        break
-                except Exception as model_err:
-                    print(f"Chat API: Model {model_name} failed. Attempting next. Error: {model_err}")
-                    continue
-            
-            if not reply:
-                raise Exception("All standby models were exhausted.")
-                
-            return {"reply": reply}
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        
+        prompt = f"""
+        You are an intelligent AI assistant for the WindGuard AI dashboard. 
+        You specialize in answering questions about wind energy, power prediction, Grid optimization, 
+        and the data on this dashboard. Be concise, professional, and directly address the user's inquiry.
+        
+        User question: {chat_input.message}
+        """
+        response = await asyncio.to_thread(model.generate_content, prompt)
+        return {"reply": response.text.strip()}
     except Exception as e:
         print(f"Chat API Error: {e}")
         return {"reply": "Sorry, I am having trouble connecting to my servers right now."}
