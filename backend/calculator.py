@@ -2,14 +2,12 @@ import math
 import os
 import json
 import asyncio
+import urllib.request
+import urllib.error
 from typing import List, Dict, Any
 from .schemas import Recommendation
 
-try:
-    import google.generativeai as genai
-    GENAI_AVAILABLE = True
-except ImportError:
-    GENAI_AVAILABLE = False
+GENAI_AVAILABLE = True # Bypassing for OpenRouter
 
 class WindCalculator:
     def __init__(self):
@@ -100,34 +98,47 @@ class WindCalculator:
         if not GENAI_AVAILABLE or not api_key:
             return self.generate_recommendations(risk_level, loss_val, is_constrained, price, demand)
             
-        try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://windguard.com",
+                "X-Title": "WindGuard AI"
+            }
             
-            prompt = f"""
-            You are an expert Wind Energy Grid Analyst AI. 
-            Analyze the current state of this wind power plant and provide 2-3 concise, highly actionable operational recommendations.
+            models_to_try = [
+                "google/gemma-4-26b-a4b-it",
+                "meta-llama/llama-3.1-8b-instruct:free",
+                "mistralai/mistral-7b-instruct:free",
+                "google/gemini-2.0-flash-lite-preview-02-05:free"
+            ]
             
-            CURRENT METRICS:
-            - Wind Generation: {generation_mw:.2f} MW
-            - Transformer Capacity: {transformer_mw:.2f} MW
-            - Is Transformer Bottlenecked? {is_constrained}
-            - Current Electricity Price: {price:.2f} INR/MWh
-            - Predicted National Demand: {demand:,.0f} MW
-            - ML Predicted Energy Loss Risk: {risk_level}
-            - Estimated Energy Loss: {loss_val:.2f} MW
-            
-            Your response MUST be a JSON array of objects. Do not wrap it in markdown codeblocks like ```json. Just raw text starting with [.
-            Each object must have exactly these three string keys:
-            1. "category": Must be one of ["SAFETY", "OPERATIONAL", "REVENUE", "MAINTENANCE"]
-            2. "message": A brilliant, concise 1-sentence recommendation based purely on the metrics.
-            3. "priority": Must be one of ["HIGH", "MEDIUM", "LOW"]
-            """
-            
-            # Using asyncio.to_thread to not block the main fastAPI loop
-            response = await asyncio.to_thread(model.generate_content, prompt)
-            
-            text = response.text.strip()
+            text = ""
+            for model_name in models_to_try:
+                payload = {
+                    "model": model_name,
+                    "messages": [{"role": "user", "content": prompt}]
+                }
+                
+                req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
+                
+                def fetch_data(req_obj):
+                    with urllib.request.urlopen(req_obj) as response:
+                        return json.loads(response.read().decode('utf-8'))
+                        
+                try:
+                    response_data = await asyncio.to_thread(fetch_data, req)
+                    if 'choices' in response_data:
+                        text = response_data['choices'][0]['message']['content'].strip()
+                        print(f"Rec API: Success with {model_name}")
+                        break
+                except Exception as model_err:
+                    print(f"Rec API: Model {model_name} failed. Error: {model_err}")
+                    continue
+                    
+            if not text:
+                return self.generate_recommendations(risk_level, loss_val, is_constrained, price, demand)
+                
             if text.startswith('```json'): text = text[7:]
             if text.startswith('```'): text = text[3:]
             if text.endswith('```'): text = text[:-3]
