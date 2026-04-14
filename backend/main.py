@@ -12,6 +12,8 @@ from .weather_service import weather_service
 from .models_loader import loader
 from .pipeline import pipeline
 from .calculator import calculator
+from .database_service import db_service
+
 try:
     import google.generativeai as genai
     GENAI_AVAILABLE = True
