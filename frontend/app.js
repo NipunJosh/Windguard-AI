@@ -207,3 +207,66 @@ function renderChart(historyData) {
         }
     });
 }
+
+// Chatbot Logic
+document.addEventListener('DOMContentLoaded', () => {
+    const chatToggle = document.getElementById('chatbot-toggle');
+    const chatWindow = document.getElementById('chatbot-window');
+    const chatClose = document.getElementById('chatbot-close');
+    const chatInput = document.getElementById('chatbot-input');
+    const chatSend = document.getElementById('chatbot-send');
+    const chatMessages = document.getElementById('chatbot-messages');
+
+    if (chatToggle && chatWindow) {
+        chatToggle.addEventListener('click', () => {
+            chatWindow.classList.toggle('hidden');
+        });
+
+        chatClose.addEventListener('click', () => {
+            chatWindow.classList.add('hidden');
+        });
+
+        chatSend.addEventListener('click', sendMessage);
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    }
+
+    async function sendMessage() {
+        const text = chatInput.value.trim();
+        if (!text) return;
+
+        // Append user message
+        const userMsg = document.createElement('div');
+        userMsg.className = 'message user';
+        userMsg.textContent = text;
+        chatMessages.appendChild(userMsg);
+        chatInput.value = '';
+        
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        // Add loading state
+        const loadingMsg = document.createElement('div');
+        loadingMsg.className = 'message ai';
+        loadingMsg.textContent = 'Thinking...';
+        chatMessages.appendChild(loadingMsg);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        try {
+            const response = await fetch(`${API_BASE}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text })
+            });
+
+            if (!response.ok) throw new Error('Chat failed');
+
+            const data = await response.json();
+            loadingMsg.textContent = data.reply;
+        } catch (err) {
+            loadingMsg.textContent = 'Error: Cannot reach the assistant right now.';
+            console.error(err);
+        }
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+});

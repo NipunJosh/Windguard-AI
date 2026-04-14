@@ -31,3 +31,6 @@ class DashboardData(BaseModel):
     generation_forecast_mw: float
     demand_forecast_mw: float
     revenue_loss_estimate: float
+
+class ChatMessage(BaseModel):
+    message: str
