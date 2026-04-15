@@ -311,6 +311,7 @@ document.addEventListener('DOMContentLoaded', () => {
             chatWindow.classList.toggle('hidden');
         });
 
+        // Closing the chat hides it, but does NOT delete history.
         chatClose.addEventListener('click', () => {
             chatWindow.classList.add('hidden');
         });
@@ -319,6 +320,54 @@ document.addEventListener('DOMContentLoaded', () => {
         chatInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendMessage();
         });
+        
+        // Inject a tiny clear button for resetting the session manually
+        const chatHeader = chatWindow.querySelector('.chatbot-header');
+        if (chatHeader && !document.getElementById('chatbot-clear')) {
+            const clearBtn = document.createElement('button');
+            clearBtn.id = 'chatbot-clear';
+            clearBtn.textContent = 'Clear';
+            clearBtn.style.background = 'transparent';
+            clearBtn.style.border = '1px solid rgba(255,255,255,0.2)';
+            clearBtn.style.color = '#fff';
+            clearBtn.style.borderRadius = '4px';
+            clearBtn.style.padding = '2px 8px';
+            clearBtn.style.fontSize = '0.8rem';
+            clearBtn.style.cursor = 'pointer';
+            clearBtn.style.marginRight = '8px';
+            
+            chatHeader.insertBefore(clearBtn, chatClose);
+            
+            clearBtn.addEventListener('click', () => {
+                sessionStorage.removeItem('windguard_chat');
+                chatMessages.innerHTML = '';
+            });
+        }
+        
+        // Load persistent memory
+        loadChatHistory();
+    }
+
+    function loadChatHistory() {
+        const saved = sessionStorage.getItem('windguard_chat');
+        if (saved && chatMessages) {
+            const logs = JSON.parse(saved);
+            chatMessages.innerHTML = '';
+            logs.forEach(msg => {
+                const el = document.createElement('div');
+                el.className = `message ${msg.role}`;
+                el.textContent = msg.text;
+                chatMessages.appendChild(el);
+            });
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    }
+
+    function saveMessage(role, text) {
+        const saved = sessionStorage.getItem('windguard_chat');
+        const logs = saved ? JSON.parse(saved) : [];
+        logs.push({ role, text });
+        sessionStorage.setItem('windguard_chat', JSON.stringify(logs));
     }
 
     async function sendMessage() {
@@ -331,6 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
         userMsg.textContent = text;
         chatMessages.appendChild(userMsg);
         chatInput.value = '';
+        saveMessage('user', text);
         
         chatMessages.scrollTop = chatMessages.scrollHeight;
 
@@ -366,6 +416,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const data = await response.json();
             loadingMsg.textContent = data.reply;
+            saveMessage('ai', data.reply);
         } catch (err) {
             loadingMsg.textContent = 'Error: Cannot reach the assistant right now.';
             console.error(err);
