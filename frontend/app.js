@@ -560,7 +560,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 risk_level: activeDisplayData.risk_level ?? 'UNKNOWN',
                 loss_mw: activeDisplayData.kpis.find(k => k.label === 'Energy Loss')?.value ?? 0
             } : null,
-            forecast_context: latestForecastData || null
+            forecast_context: latestForecastData ? latestForecastData.map(d => ({
+                ...d,
+                // Legacy fields for old Render backend compatibility
+                loss_mw: d.kpis.find(k => k.label === 'Energy Loss')?.value || 0,
+                generation_mw: d.generation_forecast_mw || 0
+            })) : null
         };
 
         try {
