@@ -1,3 +1,4 @@
+# Wind Energy Decision Support System - Revised 2026-04-16
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
@@ -206,7 +207,14 @@ User question: {chat_input.message}
         import traceback
         traceback.print_exc()
         print(f"Chat API Error: {e}")
-        return {"reply": "Sorry, I am having trouble connecting to my servers right now."}
+        
+        # Rule-based fallback if AI is dead
+        if maintenance_answer and ("maintenance" in chat_input.message.lower() or "time" in chat_input.message.lower()):
+            return {"reply": f"(Offline Assist): {maintenance_answer}"}
+        elif operation_answer and ("operation" in chat_input.message.lower() or "best" in chat_input.message.lower()):
+            return {"reply": f"(Offline Assist): {operation_answer}"}
+            
+        return {"reply": "Sorry, I am having trouble connecting to my AI servers. However, you can see the best maintenance window in the Recommendations card!"}
 
 @app.post("/api/forecast", response_model=List[DashboardData])
 async def get_24h_forecast(input_data: PlantInput):
