@@ -26,13 +26,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (timeRangeSelect) {
             timeRangeSelect.addEventListener('change', (e) => {
                 const val = e.target.value;
-                if (val === 'current' && currentLiveData) {
-                    updateUI(currentLiveData);
+                if (val === 'current') {
+                    if (currentLiveData) updateUI(currentLiveData);
                 } else if (val.startsWith('agg_')) {
                     const idx = parseInt(val.split('_')[1]);
                     if (aggregateSlots[idx]) updateUI(aggregateSlots[idx]);
-                } else if (latestForecastData && latestForecastData[val]) {
-                    updateUI(latestForecastData[val]);
+                } else {
+                    // Detailed 3-hour slot — cast string to integer for array indexing
+                    const idx = parseInt(val, 10);
+                    if (!isNaN(idx) && latestForecastData && latestForecastData[idx]) {
+                        updateUI(latestForecastData[idx]);
+                    }
                 }
             });
         }
@@ -175,6 +179,35 @@ async function fetchData() {
 
 function updateUI(data) {
     activeDisplayData = data;
+    
+    // Show which time window is active
+    let timeLabel = document.getElementById('active-time-label');
+    if (!timeLabel) {
+        timeLabel = document.createElement('div');
+        timeLabel.id = 'active-time-label';
+        timeLabel.style.cssText = 'font-size:0.8rem;color:#a78bfa;margin-bottom:0.5rem;font-weight:600;letter-spacing:0.05rem;';
+        const kpiSection = document.getElementById('kpi-containers');
+        if (kpiSection && kpiSection.parentNode) {
+            kpiSection.parentNode.insertBefore(timeLabel, kpiSection);
+        }
+    }
+    if (data.timestamp) {
+        // Format timestamp nicely
+        const ts = data.timestamp.replace(' ', 'T');
+        const dt = new Date(ts);
+        const nextDt = new Date(dt.getTime() + 3*60*60*1000);
+        const fmt = (d) => `${d.getHours().toString().padStart(2,'0')}:00`;
+        const dateStr = dt.toLocaleDateString('en-IN', {day:'numeric', month:'short'});
+        // If timestamp contains a dash it's an aggregate slot
+        if (data.timestamp.includes('-') && data.timestamp.includes(':00-')) {
+            timeLabel.textContent = `⏱ VIEWING FORECAST WINDOW: ${data.timestamp}`;
+        } else {
+            timeLabel.textContent = `⏱ VIEWING FORECAST WINDOW: ${dateStr} | ${fmt(dt)} – ${fmt(nextDt)}`;
+        }
+        timeLabel.style.display = 'block';
+    } else {
+        timeLabel.style.display = 'none';
+    }
     
     // 1. Update KPI Cards
     const kpiContainer = document.getElementById('kpi-containers');
