@@ -1,5 +1,6 @@
 const API_BASE = 'https://windguard-backend.onrender.com';
-let latestDashboardData = null;
+let currentLiveData = null;
+let activeDisplayData = null;
 let latestForecastData = null;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -17,6 +18,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 const opt = document.createElement('option');
                 opt.value = city;
                 datalist.appendChild(opt);
+            });
+        }
+        
+        const timeRangeSelect = document.getElementById('time-range-select');
+        if (timeRangeSelect) {
+            timeRangeSelect.addEventListener('change', (e) => {
+                const val = e.target.value;
+                if (val === 'current' && currentLiveData) {
+                    updateUI(currentLiveData);
+                } else if (latestForecastData && latestForecastData[val]) {
+                    updateUI(latestForecastData[val]);
+                }
             });
         }
         
@@ -75,6 +88,12 @@ async function fetchData() {
         if (!response.ok) throw new Error('Prediction failed');
 
         const data = await response.json();
+        currentLiveData = data;
+        
+        // Reset Time Range back to current visually
+        const timeSelect = document.getElementById('time-range-select');
+        if (timeSelect) timeSelect.value = 'current';
+        
         updateUI(data);
 
         const forecastRes = await fetch(`${API_BASE}/api/forecast`, {
@@ -84,6 +103,23 @@ async function fetchData() {
         });
         if (forecastRes.ok) {
             latestForecastData = await forecastRes.json();
+            
+            // Populate Time Range dropdown natively
+            const timeSelect = document.getElementById('time-range-select');
+            if (timeSelect) {
+                timeSelect.innerHTML = '<option value="current">Current (Live Data)</option>';
+                latestForecastData.forEach((item, index) => {
+                    const dt = new Date(item.timestamp.replace(' ', 'T'));
+                    const h1 = dt.getHours().toString().padStart(2, '0');
+                    const nextDt = new Date(dt.getTime() + 3*60*60*1000);
+                    const h2 = nextDt.getHours().toString().padStart(2, '0');
+                    
+                    const opt = document.createElement('option');
+                    opt.value = index;
+                    opt.textContent = `${item.timestamp.split(' ')[0]} | ${h1}:00 - ${h2}:00`;
+                    timeSelect.appendChild(opt);
+                });
+            }
         }
 
     } catch (err) {
@@ -96,7 +132,7 @@ async function fetchData() {
 }
 
 function updateUI(data) {
-    latestDashboardData = data;
+    activeDisplayData = data;
     
     // 1. Update KPI Cards
     const kpiContainer = document.getElementById('kpi-containers');
@@ -257,7 +293,7 @@ function renderForecastChart(forecastData) {
     if (!ctx) return;
 
     const labels = forecastData.map(d => d.timestamp.replace(' ', 'T').substring(11, 16));
-    const lossData = forecastData.map(d => d.loss_mw);
+    const lossData = forecastData.map(d => Object.keys(d).includes("loss_mw") ? d.loss_mw : (d.kpis.find(k => k.label === 'Energy Loss')?.value || 0));
 
     if (forecastChart) forecastChart.destroy();
 
@@ -393,14 +429,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const payload = {
             message: text,
-            context: latestDashboardData ? {
-                wind_speed: latestDashboardData.weather?.wind_speed,
-                temperature: latestDashboardData.weather?.temp,
-                generation_mw: latestDashboardData.generation_forecast_mw,
-                demand_mw: latestDashboardData.demand_forecast_mw,
-                price_inr: latestDashboardData.kpis.find(k => k.label === "Electricity Price")?.value,
-                risk_level: latestDashboardData.risk_level,
-                loss_mw: latestDashboardData.kpis.find(k => k.label === "Energy Loss")?.value
+            context: activeDisplayData ? {
+                wind_speed: activeDisplayData.weather?.wind_speed,
+                temperature: activeDisplayData.weather?.temp,
+                generation_mw: activeDisplayData.generation_forecast_mw,
+                demand_mw: activeDisplayData.demand_forecast_mw,
+                price_inr: activeDisplayData.kpis.find(k => k.label === "Electricity Price")?.value,
+                risk_level: activeDisplayData.risk_level,
+                loss_mw: activeDisplayData.kpis.find(k => k.label === "Energy Loss")?.value
             } : null,
             forecast_context: latestForecastData
         };

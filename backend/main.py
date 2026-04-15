@@ -122,14 +122,22 @@ def health_check():
 @app.get("/api/history")
 def get_history():
     try:
-        df = db_service.get_recent_records(168)
-        # The user requested exactly 7 days with a 6-hour cycle (4 points per day * 7 days = 28 points)
-        # This creates a rolling chart that naturally drops the oldest day when a new one begins
-        df_6h_cycle = df.iloc[::6].tail(28)
+        # Fetch last 400 hours to ensure we have enough for a solid 28 x 6h cycle (168h)
+        df = db_service.get_recent_records(400)
+        if df.empty:
+            return []
+            
+        # Group by 6-hour buckets to avoid messy overlaps and "repeated days"
+        df.set_index('timestamp', inplace=True)
+        # Resample to 6-hour frequency, taking the mean
+        df_resampled = df.resample('6h').mean().dropna()
         
-        # Ensure timestamp is string for JSON serialization
-        df_6h_cycle['timestamp'] = df_6h_cycle['timestamp'].astype(str)
-        return df_6h_cycle.to_dict(orient="records")
+        # Take the most recent 28 points (7 days * 4 per day)
+        df_final = df_resampled.tail(28).reset_index()
+        
+        # Ensure timestamp is string for JSON
+        df_final['timestamp'] = df_final['timestamp'].astype(str)
+        return df_final.to_dict(orient="records")
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -153,7 +161,8 @@ async def chat_endpoint(chat_input: ChatMessage):
         if chat_input.forecast_context:
             context_str += "\n\n[NEXT 24-HOURS LOSS FORECAST]\n"
             for item in chat_input.forecast_context:
-                context_str += f"Time: {item.timestamp} | Predicted Energy Loss: {item.loss_mw} MW\n"
+                loss_val = next((k.value for k in item.kpis if k.label == "Energy Loss"), 0)
+                context_str += f"Time: {item.timestamp} | Predicted Energy Loss: {loss_val} MW\n"
             context_str += "\n*INSTRUCTION*: If asked for the best time for maintenance, explicitly look at the 24-hour forecast array above. Recommend performing maintenance during the 3-hour interval with the HIGHEST energy loss. The best time to operate normally is the interval with the LOWEST energy loss."
             
         prompt = f"""
@@ -179,7 +188,7 @@ async def chat_endpoint(chat_input: ChatMessage):
         print(f"Chat API Error: {e}")
         return {"reply": "Sorry, I am having trouble connecting to my servers right now."}
 
-@app.post("/api/forecast", response_model=List[ForecastOut])
+@app.post("/api/forecast", response_model=List[DashboardData])
 async def get_24h_forecast(input_data: PlantInput):
     try:
         forecasts = await weather_service.get_forecast(input_data.plant_location)
@@ -206,10 +215,42 @@ async def get_24h_forecast(input_data: PlantInput):
             constraints = calculator.check_constraints(gen_mw, input_data.transformer_capacity_mw)
             total_loss_mw = loss_mw + constraints["curtailment_required"]
             
-            results.append(ForecastOut(
+            # Predict Price Iteratively
+            price_feats = pipeline.create_price_features(dt, demand_pred_mw, gen_mw, hist_df)
+            log_price_pred = float(loader.predict("price_model", price_feats)[0])
+            price_pred = float(np.exp(log_price_pred))
+            final_price = input_data.electricity_price if input_data.electricity_price else price_pred
+            
+            # Metrics
+            risk = calculator.calculate_risk(f["wind_speed"], abs(total_loss_mw))
+            kpis, rev_loss = calculator.format_kpis({
+                "generation": gen_mw,
+                "demand": demand_pred_mw,
+                "price": final_price,
+                "loss": total_loss_mw
+            })
+            
+            # Use offline generator strictly to prevent OpenRouter timeout cascade
+            recs = calculator.generate_recommendations({
+                "wind_speed": f["wind_speed"],
+                "generation": gen_mw,
+                "loss": total_loss_mw,
+                "demand": demand_pred_mw,
+                "transformer_cap": input_data.transformer_capacity_mw,
+                "curtailment": constraints["curtailment_required"]
+            })
+            
+            results.append(DashboardData(
+                status="success",
                 timestamp=f["timestamp"],
-                loss_mw=round(total_loss_mw, 2),
-                generation_mw=round(gen_mw, 2)
+                weather=f,
+                kpis=kpis,
+                recommendations=recs,
+                risk_level=risk["level"],
+                risk_score=risk["score"],
+                generation_forecast_mw=gen_mw,
+                demand_forecast_mw=demand_pred_mw,
+                revenue_loss_estimate=rev_loss
             ))
             
         return results
@@ -225,15 +266,9 @@ async def predict_status(input_data: PlantInput):
         weather = await weather_service.get_weather(input_data.plant_location)
         
         # 2. Determine Datetime
-        # If no datetime provided, we warp to the latest historical record to ensure stable lags
+        # We clamp the datetime directly to the nearest real-world hour.
         if not input_data.datetime:
-            latest_db_record = db_service.get_recent_records(1)
-            if not latest_db_record.empty:
-                # We use the latest timestamp + 1 hour to simulate the "next" step
-                dt = latest_db_record.iloc[0]['timestamp'] + timedelta(hours=1)
-                print(f"DEBUG: Warping time to latest history + 1h: {dt}")
-            else:
-                dt = datetime.now()
+            dt = datetime.now().replace(minute=0, second=0, microsecond=0)
         else:
             dt = datetime.fromisoformat(input_data.datetime)
         
@@ -297,15 +332,16 @@ async def predict_status(input_data: PlantInput):
             revenue_loss = 500.0 
         
         # 10. Persist new record to DB (Update Time-Series)
-        # We comment this out to ensure the dashboard remains stable upon rapid clicking.
-        # Otherwise, every click advances the simulated clock by 1 hour, causing values to drift.
-        # db_service.insert_record(
-        #     timestamp=dt,
-        #     demand=demand_pred_mw,
-        #     price=price_pred,
-        #     wind_speed=weather["wind_speed"],
-        #     temp=weather["temp"]
-        # )
+        # Because `dt` is rounded to the closest hour, rapid rapid clicks in the same hour
+        # simply execute 'ON CONFLICT DO UPDATE' in Postgres, retaining mathematical stability
+        # without overflowing the database clock!
+        db_service.insert_record(
+            timestamp=dt,
+            demand=demand_pred_mw,
+            price=price_pred,
+            wind_speed=weather["wind_speed"],
+            temp=weather["temp"]
+        )
         
         # 11. Recommendations
         recs = await calculator.generate_ai_recommendations(
