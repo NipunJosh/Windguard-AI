@@ -34,4 +34,30 @@ class WeatherService:
             }
             return result
 
+    async def get_forecast(self, location: str) -> list:
+        """
+        Fetches 24-hour forecast (8 points) for the given location.
+        """
+        params = {
+            "q": location,
+            "appid": self.api_key,
+            "units": "metric"
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get("https://api.openweathermap.org/data/2.5/forecast", params=params)
+            response.raise_for_status()
+            data = response.json()
+            
+            forecasts = []
+            for item in data.get("list", [])[:8]:
+                forecasts.append({
+                    "timestamp": item["dt_txt"],
+                    "wind_speed": item["wind"]["speed"],
+                    "temp": item["main"]["temp"],
+                    "humidity": item["main"]["humidity"],
+                    "pressure": item["main"]["pressure"]
+                })
+            return forecasts
+
 weather_service = WeatherService()

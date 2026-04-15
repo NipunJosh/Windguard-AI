@@ -32,6 +32,11 @@ class DashboardData(BaseModel):
     demand_forecast_mw: float
     revenue_loss_estimate: float
 
+class ForecastOut(BaseModel):
+    timestamp: str
+    loss_mw: float
+    generation_mw: float
+
 class ChatContext(BaseModel):
     wind_speed: Optional[float] = None
     temperature: Optional[float] = None
@@ -44,4 +49,5 @@ class ChatContext(BaseModel):
 class ChatMessage(BaseModel):
     message: str
     context: Optional[ChatContext] = None
+    forecast_context: Optional[List[ForecastOut]] = None
 

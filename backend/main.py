@@ -5,9 +5,9 @@ import numpy as np
 import pandas as pd
 import os
 import asyncio
-from typing import Dict, Any
+from typing import Dict, Any, List
 
-from .schemas import PlantInput, DashboardData, KPIOut, ChatMessage
+from .schemas import PlantInput, DashboardData, KPIOut, ChatMessage, ForecastOut
 from .weather_service import weather_service
 from .models_loader import loader
 from .pipeline import pipeline
@@ -150,6 +150,12 @@ async def chat_endpoint(chat_input: ChatMessage):
             - Energy Loss: {chat_input.context.loss_mw} MW
             """
             
+        if chat_input.forecast_context:
+            context_str += "\n\n[NEXT 24-HOURS LOSS FORECAST]\n"
+            for item in chat_input.forecast_context:
+                context_str += f"Time: {item.timestamp} | Predicted Energy Loss: {item.loss_mw} MW\n"
+            context_str += "\n*INSTRUCTION*: If asked for the best time for maintenance, explicitly look at the 24-hour forecast array above. Recommend performing maintenance during the 3-hour interval with the HIGHEST energy loss (since energy is already being wasted/curtailed). The best time to operate normally is the interval with the LOWEST energy loss."
+            
         prompt = f"""
         You are an intelligent AI assistant for the WindGuard AI dashboard. 
         You specialize in answering questions about wind energy, power prediction, Grid optimization, 
@@ -167,6 +173,45 @@ async def chat_endpoint(chat_input: ChatMessage):
         traceback.print_exc()
         print(f"Chat API Error: {e}")
         return {"reply": "Sorry, I am having trouble connecting to my servers right now."}
+
+@app.post("/api/forecast", response_model=List[ForecastOut])
+async def get_24h_forecast(input_data: PlantInput):
+    try:
+        forecasts = await weather_service.get_forecast(input_data.plant_location)
+        hist_df = db_service.get_recent_records(168)
+        
+        results = []
+        for f in forecasts:
+            dt = datetime.fromisoformat(f["timestamp"].replace(" ", "T"))
+            gen_mw = calculator.calculate_generation(f["wind_speed"], input_data.installed_capacity_mw)
+            
+            demand_feats = pipeline.create_demand_features(dt, hist_df)
+            demand_pred_scaled = float(loader.predict("demand_model", demand_feats)[0])
+            scaler = loader.models.get("demand_scaler")
+            if scaler:
+                demand_pred_mw = float(scaler.inverse_transform([[demand_pred_scaled]])[0][0])
+            else:
+                demand_pred_mw = demand_pred_scaled
+                
+            loss_feats = pipeline.create_loss_features(dt, f, demand_pred_scaled, demand_pred_mw, gen_mw, hist_df)
+            log_loss_raw = float(loader.predict("loss_reg_model", loss_feats)[0])
+            loss_mw_raw = float(np.exp(log_loss_raw)) if log_loss_raw < 50 else log_loss_raw
+            loss_mw = max(0, loss_mw_raw)
+            
+            constraints = calculator.check_constraints(gen_mw, input_data.transformer_capacity_mw)
+            total_loss_mw = loss_mw + constraints["curtailment_required"]
+            
+            results.append(ForecastOut(
+                timestamp=f["timestamp"],
+                loss_mw=round(total_loss_mw, 2),
+                generation_mw=round(gen_mw, 2)
+            ))
+            
+        return results
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/predict", response_model=DashboardData)
 async def predict_status(input_data: PlantInput):

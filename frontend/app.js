@@ -1,5 +1,6 @@
 const API_BASE = 'https://windguard-backend.onrender.com';
 let latestDashboardData = null;
+let latestForecastData = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     updateTime();
@@ -8,6 +9,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const refreshBtn = document.getElementById('refresh-btn');
     if (refreshBtn) {
+        
+        // Populate Indian Districts Datalist
+        const datalist = document.getElementById('city-list');
+        if (datalist && typeof INDIAN_DISTRICTS !== 'undefined') {
+            INDIAN_DISTRICTS.forEach(city => {
+                const opt = document.createElement('option');
+                opt.value = city;
+                datalist.appendChild(opt);
+            });
+        }
+        
         refreshBtn.addEventListener('click', fetchData);
         // Initial fetch for dashboard
         fetchData();
@@ -64,6 +76,16 @@ async function fetchData() {
 
         const data = await response.json();
         updateUI(data);
+
+        const forecastRes = await fetch(`${API_BASE}/api/forecast`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (forecastRes.ok) {
+            latestForecastData = await forecastRes.json();
+        }
+
     } catch (err) {
         console.error(err);
         alert('Failed to connect to backend. Please ensure the FastAPI server is running.');
@@ -117,8 +139,9 @@ function updateUI(data) {
     riskMeter.style.background = `conic-gradient(${color} 0% ${data.risk_score * 100}%, rgba(255,255,255,0.1) ${data.risk_score * 100}% 100%)`;
 }
 
-// Chart Instance
+// Chart Instances
 let historyChart = null;
+let forecastChart = null;
 
 async function fetchHistoryData() {
     try {
@@ -127,6 +150,24 @@ async function fetchHistoryData() {
         const data = await response.json();
 
         renderChart(data);
+
+        // Fetch Forecast
+        const payload = {
+            plant_location: "Coimbatore, IN",
+            installed_capacity_mw: 50,
+            transformer_capacity_mw: 45,
+            electricity_price: null
+        };
+        const forecastRes = await fetch(`${API_BASE}/api/forecast`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (forecastRes.ok) {
+            const forecastData = await forecastRes.json();
+            renderForecastChart(forecastData);
+        }
+
     } catch (err) {
         console.error("History fetch error:", err);
     }
@@ -211,6 +252,51 @@ function renderChart(historyData) {
     });
 }
 
+function renderForecastChart(forecastData) {
+    const ctx = document.getElementById('forecast-chart');
+    if (!ctx) return;
+
+    const labels = forecastData.map(d => d.timestamp.replace(' ', 'T').substring(11, 16));
+    const lossData = forecastData.map(d => d.loss_mw);
+
+    if (forecastChart) forecastChart.destroy();
+
+    forecastChart = new Chart(ctx.getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Predicted Energy Loss (MW)',
+                data: lossData,
+                borderColor: '#ef4444',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { labels: { color: '#f8fafc' } }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#94a3b8' },
+                    grid: { color: 'rgba(255,255,255,0.05)' }
+                },
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'Loss (MW)', color: '#94a3b8' },
+                    ticks: { color: '#94a3b8' },
+                    grid: { color: 'rgba(255,255,255,0.05)' }
+                }
+            }
+        }
+    });
+}
+
 // Chatbot Logic
 document.addEventListener('DOMContentLoaded', () => {
     const chatToggle = document.getElementById('chatbot-toggle');
@@ -265,7 +351,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 price_inr: latestDashboardData.kpis.find(k => k.label === "Electricity Price")?.value,
                 risk_level: latestDashboardData.risk_level,
                 loss_mw: latestDashboardData.kpis.find(k => k.label === "Energy Loss")?.value
-            } : null
+            } : null,
+            forecast_context: latestForecastData
         };
 
         try {
