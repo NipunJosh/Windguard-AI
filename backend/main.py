@@ -251,22 +251,26 @@ async def get_24h_forecast(input_data: PlantInput):
             
             # Metrics
             risk = calculator.calculate_risk(f["wind_speed"], abs(total_loss_mw))
-            kpis, rev_loss = calculator.format_kpis({
-                "generation": gen_mw,
-                "demand": demand_pred_mw,
-                "price": final_price,
-                "loss": total_loss_mw
-            })
             
-            # Use offline generator strictly to prevent OpenRouter timeout cascade
-            recs = calculator.generate_recommendations({
-                "wind_speed": f["wind_speed"],
-                "generation": gen_mw,
-                "loss": total_loss_mw,
-                "demand": demand_pred_mw,
-                "transformer_cap": input_data.transformer_capacity_mw,
-                "curtailment": constraints["curtailment_required"]
-            })
+            # Build KPIs inline (same as /predict route)
+            revenue_loss = total_loss_mw * final_price
+            kpis = [
+                KPIOut(label="Wind Generation", value=round(gen_mw, 2), unit="MW"),
+                KPIOut(label="Predicted Demand", value=round(demand_pred_mw, 0), unit="MW"),
+                KPIOut(label="Electricity Price", value=round(final_price, 2), unit="INR/MWh"),
+                KPIOut(label="Energy Loss", value=round(total_loss_mw, 2), unit="MW"),
+                KPIOut(label="Revenue Loss Estimate", value=round(revenue_loss, 2), unit="INR")
+            ]
+            rev_loss = revenue_loss
+            
+            # Use offline generator with correct positional args
+            recs = calculator.generate_recommendations(
+                risk["level"],
+                total_loss_mw,
+                constraints["is_constrained"],
+                final_price,
+                demand_pred_mw
+            )
             
             results.append(DashboardData(
                 status="success",
