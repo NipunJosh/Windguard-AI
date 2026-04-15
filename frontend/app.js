@@ -223,31 +223,28 @@ function updateUI(data) {
         kpiContainer.appendChild(card);
     });
 
-    // 2. Update Recommendations
+    // 2. Update Recommendations (only exists on dashboard page)
     const recsList = document.getElementById('recs-list');
-    recsList.innerHTML = '';
+    if (recsList) {
+        recsList.innerHTML = '';
+        data.recommendations.forEach(rec => {
+            const item = document.createElement('div');
+            item.className = `rec-item priority-${rec.priority}`;
+            item.innerHTML = `<strong>[${rec.category}]</strong> ${rec.message}`;
+            recsList.appendChild(item);
+        });
+    }
 
-    data.recommendations.forEach(rec => {
-        const item = document.createElement('div');
-        item.className = `rec-item priority-${rec.priority}`;
-        item.innerHTML = `
-            <strong>[${rec.category}]</strong> ${rec.message}
-        `;
-        recsList.appendChild(item);
-    });
-
-    // 3. Update Risk Profile
+    // 3. Update Risk Profile (only exists on dashboard page)
     const riskLabel = document.getElementById('risk-label');
     const riskMeter = document.getElementById('risk-meter');
-
-    riskLabel.textContent = `${data.risk_level} Risk (${Math.round(data.risk_score * 100)}%)`;
-
-    // Simple visual for risk meter
-    let color = '#10b981';
-    if (data.risk_level === 'MEDIUM') color = '#f59e0b';
-    if (data.risk_level === 'HIGH') color = '#ef4444';
-
-    riskMeter.style.background = `conic-gradient(${color} 0% ${data.risk_score * 100}%, rgba(255,255,255,0.1) ${data.risk_score * 100}% 100%)`;
+    if (riskLabel) riskLabel.textContent = `${data.risk_level} Risk (${Math.round(data.risk_score * 100)}%)`;
+    if (riskMeter) {
+        let color = '#10b981';
+        if (data.risk_level === 'MEDIUM') color = '#f59e0b';
+        if (data.risk_level === 'HIGH') color = '#ef4444';
+        riskMeter.style.background = `conic-gradient(${color} 0% ${data.risk_score * 100}%, rgba(255,255,255,0.1) ${data.risk_score * 100}% 100%)`;
+    }
 }
 
 // Chart Instances
@@ -367,8 +364,25 @@ function renderForecastChart(forecastData) {
     const ctx = document.getElementById('forecast-chart');
     if (!ctx) return;
 
-    const labels = forecastData.map(d => d.timestamp.replace(' ', 'T').substring(11, 16));
-    const lossData = forecastData.map(d => Object.keys(d).includes("loss_mw") ? d.loss_mw : (d.kpis.find(k => k.label === 'Energy Loss')?.value || 0));
+    // Labels: extract HH:MM from timestamp (works for both 'YYYY-MM-DD HH:MM' and ISO strings)
+    const labels = forecastData.map(d => {
+        const ts = (d.timestamp || '').replace(' ', 'T');
+        const dt = new Date(ts);
+        if (isNaN(dt.getTime())) return d.timestamp || '';
+        const h1 = dt.getHours().toString().padStart(2, '0');
+        const nextDt = new Date(dt.getTime() + 3*60*60*1000);
+        const h2 = nextDt.getHours().toString().padStart(2, '0');
+        return `${h1}:00–${h2}:00`;
+    });
+    // Loss data: support both old ForecastOut and new DashboardData schemas
+    const lossData = forecastData.map(d => {
+        if (typeof d.loss_mw === 'number') return d.loss_mw;
+        if (d.kpis) {
+            const kpi = d.kpis.find(k => k.label === 'Energy Loss');
+            return kpi ? kpi.value : 0;
+        }
+        return 0;
+    });
 
     if (forecastChart) forecastChart.destroy();
 

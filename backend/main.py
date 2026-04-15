@@ -159,11 +159,38 @@ async def chat_endpoint(chat_input: ChatMessage):
             """
             
         if chat_input.forecast_context:
-            context_str += "\n\n[NEXT 24-HOURS LOSS FORECAST]\n"
+            context_str += "\n\n[NEXT 24-HOURS LOSS FORECAST - DETAILED]\n"
+            
+            forecast_rows = []
             for item in chat_input.forecast_context:
                 loss_val = next((k.value for k in item.kpis if k.label == "Energy Loss"), 0)
-                context_str += f"[{item.timestamp}] Forecast: Predicted Energy Loss: {loss_val} MW\n"
-            context_str += "\n*INSTRUCTION*: If asked for the best maintenance time, you MUST explicitly mention the date and the EXACT 3-hour time window (e.g. 'April 16th | 15:00 - 18:00') from the list above that has the HIGHEST energy loss. Do not provide vague advice like 'low wind speed' unless the user asks for general theory."
+                gen_val = next((k.value for k in item.kpis if k.label == "Wind Generation"), 0)
+                
+                # Build human-readable time window string
+                try:
+                    from datetime import datetime, timedelta
+                    dt = datetime.fromisoformat(item.timestamp.replace(" ", "T"))
+                    dt_end = dt + timedelta(hours=3)
+                    time_window = f"{dt.strftime('%d %b')} | {dt.strftime('%H:%M')} – {dt_end.strftime('%H:%M')}"
+                except Exception:
+                    time_window = item.timestamp
+                    
+                forecast_rows.append({
+                    "window": time_window,
+                    "loss_mw": loss_val,
+                    "gen_mw": gen_val
+                })
+                context_str += f"  {time_window}  →  Loss: {loss_val:.2f} MW | Generation: {gen_val:.2f} MW\n"
+            
+            # Pre-compute the answer so the AI just quotes it
+            if forecast_rows:
+                best_maintenance = max(forecast_rows, key=lambda x: x["loss_mw"])
+                best_operation   = min(forecast_rows, key=lambda x: x["loss_mw"])
+                context_str += f"""
+[PRE-COMPUTED ANSWERS — QUOTE THESE EXACTLY]
+- BEST TIME FOR MAINTENANCE: {best_maintenance['window']} (Highest predicted loss: {best_maintenance['loss_mw']:.2f} MW — ideal for scheduled downtime)
+- BEST TIME TO OPERATE: {best_operation['window']} (Lowest predicted loss: {best_operation['loss_mw']:.2f} MW — optimal for normal operation)
+"""
             
         prompt = f"""
         You are an intelligent AI assistant for the WindGuard AI dashboard. 
@@ -171,9 +198,10 @@ async def chat_endpoint(chat_input: ChatMessage):
         and the data on this dashboard. 
         
         CRITICAL RULES:
-        1. Be completely direct and extremely concise. 
-        2. Answer ONLY the specific question asked in 1 to 2 short sentences. Do NOT write long paragraphs or give unsolicited extra advice.
-        3. If asked to simulate "What-If" scenarios, use the provided telemetry context to mathematically estimate the outcome on the fly.
+        1. Be completely direct and extremely concise.
+        2. Answer ONLY the specific question asked in 1 to 2 short sentences.
+        3. If the context contains a [PRE-COMPUTED ANSWERS] section, you MUST copy those exact values verbatim into your answer. Do not invent or calculate your own answer.
+        4. Never say 'low wind speed periods' or 'low demand periods' as advice — always quote the actual TIME WINDOW from the data.
         
         [LIVE DASHBOARD TELEMETRY CONTEXT]
         {context_str}
