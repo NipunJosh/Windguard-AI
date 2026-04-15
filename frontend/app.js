@@ -108,10 +108,16 @@ async function fetchData() {
         
         updateUI(data);
 
+        // Use the ML-predicted price from /predict response for the forecast call
+        // This ensures electricity_price is never null (old Render code crashes on null)
+        const forecastPayload = {
+            ...payload,
+            electricity_price: data.kpis.find(k => k.label === 'Electricity Price')?.value || payload.electricity_price || 5000
+        };
         const forecastRes = await fetch(`${API_BASE}/api/forecast`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(forecastPayload)
         });
         if (forecastRes.ok) {
             latestForecastData = await forecastRes.json();
@@ -276,10 +282,15 @@ async function fetchHistoryData() {
             forecastSection.parentElement.style.opacity = '0.5';
         }
         
+        // Ensure electricity_price is NEVER null — old Render server crashes on null  
+        const forecastPayload = {
+            ...payload,
+            electricity_price: payload.electricity_price || 5000
+        };
         const forecastRes = await fetch(`${API_BASE}/api/forecast`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(forecastPayload)
         });
         
         if (forecastSection) forecastSection.parentElement.style.opacity = '1';
