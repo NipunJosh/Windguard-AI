@@ -158,58 +158,50 @@ async def chat_endpoint(chat_input: ChatMessage):
             - Energy Loss: {chat_input.context.loss_mw} MW
             """
             
+        maintenance_answer = ""
+        operation_answer = ""
+        
         if chat_input.forecast_context:
-            context_str += "\n\n[NEXT 24-HOURS LOSS FORECAST - DETAILED]\n"
-            
             forecast_rows = []
             for item in chat_input.forecast_context:
                 loss_val = next((k.value for k in item.kpis if k.label == "Energy Loss"), 0)
                 gen_val = next((k.value for k in item.kpis if k.label == "Wind Generation"), 0)
-                
-                # Build human-readable time window string
                 try:
                     from datetime import datetime, timedelta
                     dt = datetime.fromisoformat(item.timestamp.replace(" ", "T"))
                     dt_end = dt + timedelta(hours=3)
-                    time_window = f"{dt.strftime('%d %b')} | {dt.strftime('%H:%M')} – {dt_end.strftime('%H:%M')}"
+                    time_window = f"{dt.strftime('%d %b %Y')} {dt.strftime('%H:%M')} to {dt_end.strftime('%H:%M')}"
                 except Exception:
                     time_window = item.timestamp
-                    
-                forecast_rows.append({
-                    "window": time_window,
-                    "loss_mw": loss_val,
-                    "gen_mw": gen_val
-                })
-                context_str += f"  {time_window}  →  Loss: {loss_val:.2f} MW | Generation: {gen_val:.2f} MW\n"
+                forecast_rows.append({"window": time_window, "loss_mw": loss_val, "gen_mw": gen_val})
             
-            # Pre-compute the answer so the AI just quotes it
             if forecast_rows:
-                best_maintenance = max(forecast_rows, key=lambda x: x["loss_mw"])
-                best_operation   = min(forecast_rows, key=lambda x: x["loss_mw"])
-                context_str += f"""
-[PRE-COMPUTED ANSWERS — QUOTE THESE EXACTLY]
-- BEST TIME FOR MAINTENANCE: {best_maintenance['window']} (Highest predicted loss: {best_maintenance['loss_mw']:.2f} MW — ideal for scheduled downtime)
-- BEST TIME TO OPERATE: {best_operation['window']} (Lowest predicted loss: {best_operation['loss_mw']:.2f} MW — optimal for normal operation)
-"""
+                best = max(forecast_rows, key=lambda x: x["loss_mw"])
+                worst = min(forecast_rows, key=lambda x: x["loss_mw"])
+                maintenance_answer = f"The best time to schedule maintenance is {best['window']} because that is when predicted energy loss is highest ({best['loss_mw']:.2f} MW), meaning the turbines are already performing poorly — ideal for planned downtime."
+                operation_answer = f"The best time for normal operation is {worst['window']} because predicted energy loss is lowest ({worst['loss_mw']:.2f} MW) — maximum generation efficiency."
+                
+                context_str += "\n\n24-HOUR ENERGY LOSS FORECAST:\n"
+                for row in forecast_rows:
+                    context_str += f"  {row['window']}  →  Energy Loss: {row['loss_mw']:.2f} MW | Generation: {row['gen_mw']:.2f} MW\n"
             
-        prompt = f"""
-        You are an intelligent AI assistant for the WindGuard AI dashboard. 
-        You specialize in answering questions about wind energy, power prediction, Grid optimization, 
-        and the data on this dashboard. 
-        
-        CRITICAL RULES:
-        1. Be completely direct and extremely concise.
-        2. Answer ONLY the specific question asked in 1 to 2 short sentences.
-        3. If the context contains a [PRE-COMPUTED ANSWERS] section, you MUST copy those exact values verbatim into your answer. Do not invent or calculate your own answer.
-        4. Never say 'low wind speed periods' or 'low demand periods' as advice — always quote the actual TIME WINDOW from the data.
-        
-        [LIVE DASHBOARD TELEMETRY CONTEXT]
-        {context_str}
-        
-        User question: {chat_input.message}
-        """
+        prompt = f"""You are an intelligent AI assistant for the WindGuard AI wind energy dashboard.
+
+CRITICAL RULES:
+1. Be extremely concise — answer in 1 to 2 sentences only.
+2. When asked about maintenance timing, use EXACTLY this answer: {maintenance_answer if maintenance_answer else "Forecast data not yet available."}
+3. When asked about best operating time, use EXACTLY this answer: {operation_answer if operation_answer else "Forecast data not yet available."}
+4. For all other questions, use the telemetry context below.
+5. Never be vague — always state exact time windows from the forecast when available.
+
+LIVE DASHBOARD TELEMETRY:
+{context_str}
+
+User question: {chat_input.message}
+"""
         response_text = await fetch_openrouter_response(prompt, json_format=False)
         return {"reply": response_text.strip()}
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -243,14 +235,21 @@ async def get_24h_forecast(input_data: PlantInput):
             constraints = calculator.check_constraints(gen_mw, input_data.transformer_capacity_mw)
             total_loss_mw = loss_mw + constraints["curtailment_required"]
             
-            # Predict Price Iteratively
-            price_feats = pipeline.create_price_features(dt, demand_pred_mw, gen_mw, hist_df)
+            # Predict Price — same signature as /predict: (dt, weather_dict, demand_scaled, hist_df)
+            price_feats = pipeline.create_price_features(dt, f, demand_pred_scaled, hist_df)
             log_price_pred = float(loader.predict("price_model", price_feats)[0])
             price_pred = float(np.exp(log_price_pred))
             final_price = input_data.electricity_price if input_data.electricity_price else price_pred
             
-            # Metrics
-            risk = calculator.calculate_risk(f["wind_speed"], abs(total_loss_mw))
+            # Metrics — match /predict route exactly
+            risk_prob = float(loader.models['loss_risk_model'].predict_proba(loss_feats)[0][1])
+            risk_score = risk_prob
+            if risk_score >= 0.70:
+                risk_level = "HIGH"
+            elif risk_score >= 0.30:
+                risk_level = "MEDIUM"
+            else:
+                risk_level = "LOW"
             
             # Build KPIs inline (same as /predict route)
             revenue_loss = total_loss_mw * final_price
@@ -261,16 +260,13 @@ async def get_24h_forecast(input_data: PlantInput):
                 KPIOut(label="Energy Loss", value=round(total_loss_mw, 2), unit="MW"),
                 KPIOut(label="Revenue Loss Estimate", value=round(revenue_loss, 2), unit="INR")
             ]
-            rev_loss = revenue_loss
             
-            # Use offline generator with correct positional args
+            # Offline recommendations (no AI to avoid timeout cascade on 8 iterations)
             recs = calculator.generate_recommendations(
-                risk["level"],
-                total_loss_mw,
-                constraints["is_constrained"],
-                final_price,
-                demand_pred_mw
+                risk_level, total_loss_mw, constraints["is_constrained"],
+                final_price, demand_pred_mw
             )
+
             
             results.append(DashboardData(
                 status="success",
@@ -278,11 +274,11 @@ async def get_24h_forecast(input_data: PlantInput):
                 weather=f,
                 kpis=kpis,
                 recommendations=recs,
-                risk_level=risk["level"],
-                risk_score=risk["score"],
+                risk_level=risk_level,
+                risk_score=risk_score,
                 generation_forecast_mw=gen_mw,
                 demand_forecast_mw=demand_pred_mw,
-                revenue_loss_estimate=rev_loss
+                revenue_loss_estimate=revenue_loss
             ))
             
         return results

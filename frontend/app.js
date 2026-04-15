@@ -98,6 +98,9 @@ async function fetchData() {
         const data = await response.json();
         currentLiveData = data;
         
+        // Persist plant config so history.html can use it for 24hr forecast
+        localStorage.setItem('wg_payload', JSON.stringify(payload));
+        
         // Reset Time Range back to current visually
         const timeSelect = document.getElementById('time-range-select');
         if (timeSelect) timeSelect.value = 'current';
@@ -111,9 +114,8 @@ async function fetchData() {
         });
         if (forecastRes.ok) {
             latestForecastData = await forecastRes.json();
-            
             if (!latestForecastData || latestForecastData.length === 0) {
-                showToast("Data not available. Try after some time.");
+                showToast("Forecast data not available. Try after some time.");
             }
             
             // Populate Time Range dropdown natively
@@ -256,28 +258,47 @@ async function fetchHistoryData() {
         const response = await fetch(`${API_BASE}/api/history`);
         if (!response.ok) throw new Error('Failed to fetch history');
         const data = await response.json();
-
         renderChart(data);
 
-        // Fetch Forecast
-        const payload = {
+        // Use saved plant config from dashboard, fallback to defaults
+        const saved = localStorage.getItem('wg_payload');
+        const payload = saved ? JSON.parse(saved) : {
             plant_location: "Coimbatore, IN",
             installed_capacity_mw: 50,
             transformer_capacity_mw: 45,
             electricity_price: null
         };
+        
+        // Show loading state on chart section
+        const forecastSection = document.getElementById('forecast-chart');
+        if (forecastSection) {
+            forecastSection.parentElement.style.opacity = '0.5';
+        }
+        
         const forecastRes = await fetch(`${API_BASE}/api/forecast`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
+        
+        if (forecastSection) forecastSection.parentElement.style.opacity = '1';
+        
         if (forecastRes.ok) {
             const forecastData = await forecastRes.json();
-            renderForecastChart(forecastData);
+            if (forecastData && forecastData.length > 0) {
+                renderForecastChart(forecastData);
+            } else {
+                showToast('Forecast data not available for this location.');
+            }
+        } else {
+            const errText = await forecastRes.text();
+            console.error('Forecast API error:', errText);
+            showToast('Could not load 24-hour forecast. Check console for details.');
         }
 
     } catch (err) {
         console.error("History fetch error:", err);
+        showToast('Failed to load history data.');
     }
 }
 
