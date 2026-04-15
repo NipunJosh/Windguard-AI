@@ -1,4 +1,5 @@
 const API_BASE = 'https://windguard-backend.onrender.com';
+
 let currentLiveData = null;
 let activeDisplayData = null;
 let latestForecastData = null;
@@ -540,15 +541,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const payload = {
             message: text,
             context: activeDisplayData ? {
-                wind_speed: activeDisplayData.weather?.wind_speed,
-                temperature: activeDisplayData.weather?.temp,
-                generation_mw: activeDisplayData.generation_forecast_mw,
-                demand_mw: activeDisplayData.demand_forecast_mw,
-                price_inr: activeDisplayData.kpis.find(k => k.label === "Electricity Price")?.value,
-                risk_level: activeDisplayData.risk_level,
-                loss_mw: activeDisplayData.kpis.find(k => k.label === "Energy Loss")?.value
+                wind_speed: activeDisplayData.weather?.wind_speed ?? 0,
+                temperature: activeDisplayData.weather?.temp ?? 25,
+                generation_mw: activeDisplayData.generation_forecast_mw ?? 0,
+                demand_mw: activeDisplayData.demand_forecast_mw ?? 0,
+                price_inr: activeDisplayData.kpis.find(k => k.label === 'Electricity Price')?.value ?? 0,
+                risk_level: activeDisplayData.risk_level ?? 'UNKNOWN',
+                loss_mw: activeDisplayData.kpis.find(k => k.label === 'Energy Loss')?.value ?? 0
             } : null,
-            forecast_context: latestForecastData
+            forecast_context: latestForecastData || null
         };
 
         try {
