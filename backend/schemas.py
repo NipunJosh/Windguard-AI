@@ -16,21 +16,22 @@ class KPIOut(BaseModel):
     target: Optional[float] = None
 
 class Recommendation(BaseModel):
-    category: str  # "OPERATIONAL", "SAFETY", "REVENUE"
-    message: str
-    priority: str # "HIGH", "MEDIUM", "LOW"
+    category: Optional[str] = None
+    message: Optional[str] = None
+    priority: Optional[str] = None
 
 class DashboardData(BaseModel):
-    status: str
+    status: Optional[str] = "success"
     timestamp: str
-    weather: dict
-    kpis: List[KPIOut]
-    recommendations: List[Recommendation]
-    risk_level: str # "LOW", "MEDIUM", "HIGH"
-    risk_score: float
-    generation_forecast_mw: float
-    demand_forecast_mw: float
-    revenue_loss_estimate: float
+    weather: Optional[dict] = None
+    kpis: Optional[List[KPIOut]] = None
+    recommendations: Optional[List[Recommendation]] = None
+    risk_level: Optional[str] = None
+    risk_score: Optional[float] = None
+    generation_forecast_mw: Optional[float] = None
+    demand_forecast_mw: Optional[float] = None
+    revenue_loss_estimate: Optional[float] = None
+
 
 class ForecastOut(BaseModel):
     timestamp: str
@@ -49,5 +50,5 @@ class ChatContext(BaseModel):
 class ChatMessage(BaseModel):
     message: str
     context: Optional[ChatContext] = None
-    forecast_context: Optional[List[ForecastOut]] = None
+    forecast_context: Optional[List[DashboardData]] = None
 
