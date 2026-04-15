@@ -5,11 +5,10 @@ import google.generativeai as genai
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Primary, Secondary, Tertiary fallbacks for OpenRouter (FREE MODELS)
-# This chain ensures if one model is exhausted, it automatically tries the next.
 MODELS_CHAIN = [
-    "google/gemini-flash-1.5-exp:free",
-    "meta-llama/llama-3.1-8b-instruct:free",
-    "qwen/qwen-2-7b-instruct:free"
+    "openrouter/free",
+    "google/gemini-flash-1.5:free",
+    "meta-llama/llama-3.1-8b-instruct:free"
 ]
 
 async def fetch_openrouter_response(prompt: str, json_format: bool = False) -> str:

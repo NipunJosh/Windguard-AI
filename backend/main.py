@@ -165,11 +165,15 @@ async def chat_endpoint(chat_input: ChatMessage):
         if chat_input.forecast_context:
             forecast_rows = []
             for item in chat_input.forecast_context:
-                loss_val = next((k.value for k in item.kpis if k.label == "Energy Loss"), 0)
-                gen_val = next((k.value for k in item.kpis if k.label == "Wind Generation"), 0)
+                # Use direct fields if available (Clean Payload), fallback to 0
+                loss_val = getattr(item, 'loss_mw', 0) or 0
+                gen_val = getattr(item, 'generation_mw', 0) or 0
+                
                 try:
                     from datetime import datetime, timedelta
-                    dt = datetime.fromisoformat(item.timestamp.replace(" ", "T"))
+                    # Handle both space and T formats
+                    ts = item.timestamp.replace(" ", "T")
+                    dt = datetime.fromisoformat(ts)
                     dt_end = dt + timedelta(hours=3)
                     time_window = f"{dt.strftime('%d %b %Y')} {dt.strftime('%H:%M')} to {dt_end.strftime('%H:%M')}"
                 except Exception:
@@ -177,8 +181,8 @@ async def chat_endpoint(chat_input: ChatMessage):
                 forecast_rows.append({"window": time_window, "loss_mw": loss_val, "gen_mw": gen_val})
             
             if forecast_rows:
-                best = max(forecast_rows, key=lambda x: x["loss_mw"])
-                worst = min(forecast_rows, key=lambda x: x["loss_mw"])
+                best = max(forecast_rows, key=lambda x: (x["loss_mw"] or 0))
+                worst = min(forecast_rows, key=lambda x: (x["loss_mw"] or 0))
                 maintenance_answer = f"The best time to schedule maintenance is {best['window']} because that is when predicted energy loss is highest ({best['loss_mw']:.2f} MW), meaning the turbines are already performing poorly — ideal for planned downtime."
                 operation_answer = f"The best time for normal operation is {worst['window']} because predicted energy loss is lowest ({worst['loss_mw']:.2f} MW) — maximum generation efficiency."
                 
