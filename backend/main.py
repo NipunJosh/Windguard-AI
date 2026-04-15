@@ -162,8 +162,8 @@ async def chat_endpoint(chat_input: ChatMessage):
             context_str += "\n\n[NEXT 24-HOURS LOSS FORECAST]\n"
             for item in chat_input.forecast_context:
                 loss_val = next((k.value for k in item.kpis if k.label == "Energy Loss"), 0)
-                context_str += f"Time: {item.timestamp} | Predicted Energy Loss: {loss_val} MW\n"
-            context_str += "\n*INSTRUCTION*: If asked for the best time for maintenance, explicitly look at the 24-hour forecast array above. Recommend performing maintenance during the 3-hour interval with the HIGHEST energy loss. The best time to operate normally is the interval with the LOWEST energy loss."
+                context_str += f"[{item.timestamp}] Forecast: Predicted Energy Loss: {loss_val} MW\n"
+            context_str += "\n*INSTRUCTION*: If asked for the best maintenance time, you MUST explicitly mention the date and the EXACT 3-hour time window (e.g. 'April 16th | 15:00 - 18:00') from the list above that has the HIGHEST energy loss. Do not provide vague advice like 'low wind speed' unless the user asks for general theory."
             
         prompt = f"""
         You are an intelligent AI assistant for the WindGuard AI dashboard. 

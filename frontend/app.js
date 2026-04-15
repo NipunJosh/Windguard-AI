@@ -2,6 +2,7 @@ const API_BASE = 'https://windguard-backend.onrender.com';
 let currentLiveData = null;
 let activeDisplayData = null;
 let latestForecastData = null;
+let aggregateSlots = []; // For 6-hour slices
 
 document.addEventListener('DOMContentLoaded', () => {
     updateTime();
@@ -27,6 +28,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const val = e.target.value;
                 if (val === 'current' && currentLiveData) {
                     updateUI(currentLiveData);
+                } else if (val.startsWith('agg_')) {
+                    const idx = parseInt(val.split('_')[1]);
+                    if (aggregateSlots[idx]) updateUI(aggregateSlots[idx]);
                 } else if (latestForecastData && latestForecastData[val]) {
                     updateUI(latestForecastData[val]);
                 }
@@ -104,10 +108,48 @@ async function fetchData() {
         if (forecastRes.ok) {
             latestForecastData = await forecastRes.json();
             
+            if (!latestForecastData || latestForecastData.length === 0) {
+                showToast("Data not available. Try after some time.");
+            }
+            
             // Populate Time Range dropdown natively
             const timeSelect = document.getElementById('time-range-select');
             if (timeSelect) {
                 timeSelect.innerHTML = '<option value="current">Current (Live Data)</option>';
+                
+                // 1. Add Predefined 6-hour Aggregate Slots (Boss Request)
+                aggregateSlots = [];
+                for(let i=0; i < latestForecastData.length - 1; i += 2) {
+                    const d1 = latestForecastData[i];
+                    const d2 = latestForecastData[i+1];
+                    
+                    const dt1 = new Date(d1.timestamp.replace(' ', 'T'));
+                    const hStart = dt1.getHours().toString().padStart(2, '0');
+                    const dtEnd = new Date(new Date(d2.timestamp.replace(' ', 'T')).getTime() + 3*60*60*1000);
+                    const hEnd = dtEnd.getHours().toString().padStart(2, '0');
+
+                    // Simple Average for Aggregation
+                    const agg = JSON.parse(JSON.stringify(d1));
+                    agg.timestamp = `${d1.timestamp.split(' ')[0]} ${hStart}:00-${hEnd}:00`;
+                    agg.kpis.forEach((k, idx) => {
+                        const val2 = d2.kpis.find(k2 => k2.label === k.label)?.value || 0;
+                        k.value = (k.value + val2) / 2;
+                    });
+                    aggregateSlots.push(agg);
+                    
+                    const opt = document.createElement('option');
+                    opt.value = `agg_${aggregateSlots.length - 1}`;
+                    opt.textContent = `★ ${agg.timestamp}`;
+                    timeSelect.appendChild(opt);
+                }
+
+                // Divider
+                const divider = document.createElement('option');
+                divider.disabled = true;
+                divider.textContent = "-------------------------";
+                timeSelect.appendChild(divider);
+
+                // 2. Add Detailed 3-hour Individual Slots
                 latestForecastData.forEach((item, index) => {
                     const dt = new Date(item.timestamp.replace(' ', 'T'));
                     const h1 = dt.getHours().toString().padStart(2, '0');
@@ -124,7 +166,7 @@ async function fetchData() {
 
     } catch (err) {
         console.error(err);
-        alert('Failed to connect to backend. Please ensure the FastAPI server is running.');
+        showToast("Backend connection error. Please try again later.");
     } finally {
         btn.textContent = 'Sync Data';
         btn.disabled = false;
@@ -460,3 +502,19 @@ document.addEventListener('DOMContentLoaded', () => {
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 });
+
+function showToast(message) {
+    let toast = document.querySelector('.toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.className = 'toast';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.classList.remove('hidden');
+    
+    setTimeout(() => {
+        toast.classList.add('hidden');
+    }, 5000);
+}
+
