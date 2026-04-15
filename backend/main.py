@@ -154,12 +154,17 @@ async def chat_endpoint(chat_input: ChatMessage):
             context_str += "\n\n[NEXT 24-HOURS LOSS FORECAST]\n"
             for item in chat_input.forecast_context:
                 context_str += f"Time: {item.timestamp} | Predicted Energy Loss: {item.loss_mw} MW\n"
-            context_str += "\n*INSTRUCTION*: If asked for the best time for maintenance, explicitly look at the 24-hour forecast array above. Recommend performing maintenance during the 3-hour interval with the HIGHEST energy loss (since energy is already being wasted/curtailed). The best time to operate normally is the interval with the LOWEST energy loss."
+            context_str += "\n*INSTRUCTION*: If asked for the best time for maintenance, explicitly look at the 24-hour forecast array above. Recommend performing maintenance during the 3-hour interval with the HIGHEST energy loss. The best time to operate normally is the interval with the LOWEST energy loss."
             
         prompt = f"""
         You are an intelligent AI assistant for the WindGuard AI dashboard. 
         You specialize in answering questions about wind energy, power prediction, Grid optimization, 
-        and the data on this dashboard. Be concise, professional, and directly address the user's inquiry.
+        and the data on this dashboard. 
+        
+        CRITICAL RULES:
+        1. Be completely direct and extremely concise. 
+        2. Answer ONLY the specific question asked in 1 to 2 short sentences. Do NOT write long paragraphs or give unsolicited extra advice.
+        3. If asked to simulate "What-If" scenarios, use the provided telemetry context to mathematically estimate the outcome on the fly.
         
         [LIVE DASHBOARD TELEMETRY CONTEXT]
         {context_str}
