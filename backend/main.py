@@ -212,21 +212,24 @@ async def chat_endpoint(chat_input: ChatMessage):
         # Build maintenance/operation answers only if there is meaningful variation in loss
         if forecast_rows:
             max_loss = max(r["loss_mw"] for r in forecast_rows)
-            min_loss = min(r["loss_mw"] for r in forecast_rows)
+            max_gen = max(r["gen_mw"] for r in forecast_rows)
             
-            best = max(forecast_rows, key=lambda x: x["loss_mw"])
-            worst = min(forecast_rows, key=lambda x: x["loss_mw"])
+            best_maintenance = max(forecast_rows, key=lambda x: x["loss_mw"])
+            best_operation = max(forecast_rows, key=lambda x: x["gen_mw"])
             
             context_str += "\n\n24-HOUR ENERGY LOSS FORECAST (server-computed):\n"
             for row in forecast_rows:
                 context_str += f"  {row['window']}  →  Energy Loss: {row['loss_mw']:.2f} MW | Generation: {row['gen_mw']:.2f} MW\n"
             
             if max_loss > 0:
-                maintenance_answer = f"The best time to schedule maintenance is {best['window']} because that is when predicted energy loss is highest ({best['loss_mw']:.2f} MW), meaning the turbines are already performing poorly — ideal for planned downtime."
-                operation_answer = f"The best time for normal operation is {worst['window']} because predicted energy loss is lowest ({worst['loss_mw']:.2f} MW) — maximum generation efficiency."
+                maintenance_answer = f"The best time to schedule maintenance is {best_maintenance['window']} because that is when predicted energy loss is highest ({best_maintenance['loss_mw']:.2f} MW), meaning the turbines are already performing poorly — ideal for planned downtime."
             else:
                 maintenance_answer = "No significant energy loss is predicted in the next 24 hours. Any window is suitable for maintenance; prefer early morning (midnight to 4 AM) when grid demand is lowest."
-                operation_answer = "Energy loss predictions are near-zero across all 24-hour windows — excellent conditions for full generation operation."
+                
+            if max_gen > 0:
+                operation_answer = f"The best time for normal operation is {best_operation['window']} because predicted generation is highest ({best_operation['gen_mw']:.2f} MW) — maximum output efficiency."
+            else:
+                operation_answer = "Expected wind generation is near-zero across all 24-hour windows — grid supply will be minimal."
         
         system_prompt = f"""You are an intelligent AI assistant for the WindGuard AI wind energy dashboard.
 

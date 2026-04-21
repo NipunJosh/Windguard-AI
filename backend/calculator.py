@@ -118,13 +118,14 @@ class WindCalculator:
         try:
             text = await fetch_openrouter_response(prompt, json_format=True)
             
-            # Clean possible markdown artifacts occasionally leaked by secondary models
-            if text.startswith('```json'): text = text[7:]
-            if text.startswith('```'): text = text[3:]
-            if text.endswith('```'): text = text[:-3]
-            text = text.strip()
+            import re
+            # Safely extract the JSON array from the response in case of markdown leakage
+            json_match = re.search(r'\[.*\]', text, re.DOTALL)
+            if json_match:
+                recs_data = json.loads(json_match.group(0))
+            else:
+                recs_data = json.loads(text)
                 
-            recs_data = json.loads(text)
             recs = []
             for item in recs_data:
                 recs.append(Recommendation(

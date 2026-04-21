@@ -201,7 +201,6 @@ function updateUI(data) {
         }
     }
     if (data.timestamp) {
-        // Format timestamp nicely
         const ts = data.timestamp.replace(' ', 'T');
         const dt = new Date(ts);
         const nextDt = new Date(dt.getTime() + 3*60*60*1000);
@@ -212,7 +211,18 @@ function updateUI(data) {
         const isLive = timeSelect && timeSelect.value === 'current';
         
         if (isLive) {
-            timeLabel.textContent = `⏱ VIEWING LIVE TELEMETRY: ${dateStr} | ${dt.toLocaleTimeString()}`;
+            // Use genuine local time so it perfectly matches the top-bar clock
+            const localNow = new Date();
+            const localDateStr = localNow.toLocaleDateString('en-IN', {day:'numeric', month:'short'});
+            
+            // Calculate the 3-hour interval that the current time falls into
+            const currentHour = localNow.getHours();
+            const intervalStartHour = Math.floor(currentHour / 3) * 3;
+            const intervalEndHour = intervalStartHour + 3;
+            const intervalStartStr = `${intervalStartHour.toString().padStart(2, '0')}:00`;
+            const intervalEndStr = `${intervalEndHour.toString().padStart(2, '0')}:00`;
+            
+            timeLabel.textContent = `⏱ VIEWING LIVE TELEMETRY: ${localDateStr} | ${intervalStartStr} – ${intervalEndStr} (Current Time: ${localNow.toLocaleTimeString()})`;
         } else if (data.timestamp.includes('-') && data.timestamp.includes(':00-')) {
             // Aggregate slot
             timeLabel.textContent = `⏱ VIEWING FORECAST WINDOW: ${data.timestamp}`;
