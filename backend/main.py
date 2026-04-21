@@ -286,7 +286,7 @@ async def get_24h_forecast(input_data: PlantInput):
                 
             loss_feats = pipeline.create_loss_features(dt, f, demand_pred_scaled, demand_pred_mw, gen_mw, hist_df)
             log_loss_raw = float(loader.predict("loss_reg_model", loss_feats)[0])
-            loss_mw_raw = float(np.exp(log_loss_raw)) if log_loss_raw < 50 else log_loss_raw
+            loss_mw_raw = float(np.expm1(log_loss_raw)) if log_loss_raw < 50 else log_loss_raw
             loss_mw = max(0, loss_mw_raw)
             
             constraints = calculator.check_constraints(gen_mw, input_data.transformer_capacity_mw)
@@ -393,7 +393,7 @@ async def predict_status(input_data: PlantInput):
         # Loss Regression
         log_loss_raw = float(loader.predict("loss_reg_model", loss_feats)[0])
         # IMPORTANT: Check if model was trained on raw loss or log_loss. 
-        loss_mw_raw = float(np.exp(log_loss_raw)) if log_loss_raw < 50 else log_loss_raw
+        loss_mw_raw = float(np.expm1(log_loss_raw)) if log_loss_raw < 50 else log_loss_raw
         loss_mw = max(0, loss_mw_raw)
         
         # Loss Risk Classification
