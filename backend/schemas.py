@@ -47,6 +47,10 @@ class ChatContext(BaseModel):
     risk_level: Optional[str] = None
     loss_mw: Optional[float] = None
 
+class ChatHistoryItem(BaseModel):
+    role: str  # 'user' or 'assistant'
+    content: str
+
 class ForecastContext(BaseModel):
     timestamp: str
     loss_mw: Optional[float] = 0
@@ -59,4 +63,5 @@ class ChatMessage(BaseModel):
     plant_location: Optional[str] = "Coimbatore, IN"
     installed_capacity_mw: Optional[float] = 50
     transformer_capacity_mw: Optional[float] = 45
+    history: Optional[List[ChatHistoryItem]] = []
 

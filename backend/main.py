@@ -228,21 +228,28 @@ async def chat_endpoint(chat_input: ChatMessage):
                 maintenance_answer = "No significant energy loss is predicted in the next 24 hours. Any window is suitable for maintenance; prefer early morning (midnight to 4 AM) when grid demand is lowest."
                 operation_answer = "Energy loss predictions are near-zero across all 24-hour windows — excellent conditions for full generation operation."
         
-        prompt = f"""You are an intelligent AI assistant for the WindGuard AI wind energy dashboard.
+        system_prompt = f"""You are an intelligent AI assistant for the WindGuard AI wind energy dashboard.
 
 CRITICAL RULES:
 1. Be extremely concise — answer in 1 to 2 sentences only.
 2. When asked about maintenance timing, use EXACTLY this answer: {maintenance_answer if maintenance_answer else "Forecast data not yet available."}
 3. When asked about best operating time, use EXACTLY this answer: {operation_answer if operation_answer else "Forecast data not yet available."}
-4. For all other questions, use the telemetry context below.
-5. Never be vague — always state exact time windows from the forecast when available.
+4. For all other questions, use the telemetry context below — especially the 24-hour forecast table which has exact MW values per interval.
+5. Never be vague — always state exact time windows and MW values from the forecast when available.
+6. For follow-up questions about a previously mentioned time window, look up that window in the 24-HOUR ENERGY LOSS FORECAST table and give the exact MW value.
 
 LIVE DASHBOARD TELEMETRY:
 {context_str}
-
-User question: {chat_input.message}
 """
-        response_text = await fetch_openrouter_response(prompt, json_format=False)
+        # Build conversation messages: system context + history + current question
+        history_messages = []
+        if chat_input.history:
+            for h in chat_input.history:
+                history_messages.append({"role": h.role, "content": h.content})
+        # Add the current user question at the end
+        history_messages.append({"role": "user", "content": chat_input.message})
+        
+        response_text = await fetch_openrouter_response(system_prompt, json_format=False, history=history_messages)
         return {"reply": response_text.strip()}
 
     except Exception as e:

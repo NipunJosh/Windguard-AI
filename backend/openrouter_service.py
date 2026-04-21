@@ -11,12 +11,22 @@ MODELS_CHAIN = [
     "meta-llama/llama-3.1-8b-instruct:free"
 ]
 
-async def fetch_openrouter_response(prompt: str, json_format: bool = False) -> str:
+async def fetch_openrouter_response(prompt: str, json_format: bool = False, history: list = None) -> str:
     """
-    Attempts to get a response from OpenRouter. 
+    Attempts to get a response from OpenRouter.
+    Supports conversation history for multi-turn follow-up questions.
     FALLS BACK TO DIRECT GEMINI SDK if OpenRouter fails.
     """
-    # 1. OPTIONAL: Direct Gemini Fallback (Silver Bullet)
+    # Build the messages array with history if provided
+    if history:
+        messages = [{"role": "user", "content": prompt}]  # System context as first message
+        for h in history:
+            messages.append({"role": h["role"], "content": h["content"]})
+        # The last user message is the current question being asked
+        # (already appended as part of history from the caller)
+    else:
+        messages = [{"role": "user", "content": prompt}]
+
     gemini_key = os.environ.get("GEMINI_API_KEY")
     api_key = os.environ.get("OPENROUTER_API_KEY")
 
@@ -24,7 +34,7 @@ async def fetch_openrouter_response(prompt: str, json_format: bool = False) -> s
     if api_key:
         headers = {
             "Authorization": f"Bearer {api_key}",
-            "HTTP-Referer": "http://localhost:18888", 
+            "HTTP-Referer": "http://localhost:18888",
             "X-Title": "WindGuard AI",
             "Content-Type": "application/json"
         }
@@ -33,7 +43,7 @@ async def fetch_openrouter_response(prompt: str, json_format: bool = False) -> s
             for model in MODELS_CHAIN:
                 payload = {
                     "model": model,
-                    "messages": [{"role": "user", "content": prompt}]
+                    "messages": messages
                 }
                 try:
                     print(f"Trying OpenRouter model: {model}...")

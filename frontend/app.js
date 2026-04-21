@@ -549,11 +549,21 @@ document.addEventListener('DOMContentLoaded', () => {
         chatMessages.appendChild(loadingMsg);
         chatMessages.scrollTop = chatMessages.scrollHeight;
         
+        // Collect last 6 turns of chat history for AI follow-up context
+        const savedHistory = sessionStorage.getItem('windguard_chat');
+        const allLogs = savedHistory ? JSON.parse(savedHistory) : [];
+        // Take the last 6 messages (3 turns), excluding the message just saved
+        const recentHistory = allLogs.slice(-7, -1).map(m => ({
+            role: m.role === 'ai' ? 'assistant' : 'user',
+            content: m.text
+        }));
+        
         const payload = {
             message: text,
             plant_location: document.getElementById('location-input')?.value || "Coimbatore, IN",
             installed_capacity_mw: parseFloat(document.getElementById('capacity-input')?.value) || 50,
             transformer_capacity_mw: parseFloat(document.getElementById('transformer-input')?.value) || 45,
+            history: recentHistory,
             context: activeDisplayData ? {
                 wind_speed: activeDisplayData.weather?.wind_speed ?? 0,
                 temperature: activeDisplayData.weather?.temp ?? 25,
