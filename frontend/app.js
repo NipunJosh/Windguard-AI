@@ -551,6 +551,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const payload = {
             message: text,
+            plant_location: document.getElementById('location-input')?.value || "Coimbatore, IN",
+            installed_capacity_mw: parseFloat(document.getElementById('capacity-input')?.value) || 50,
+            transformer_capacity_mw: parseFloat(document.getElementById('transformer-input')?.value) || 45,
             context: activeDisplayData ? {
                 wind_speed: activeDisplayData.weather?.wind_speed ?? 0,
                 temperature: activeDisplayData.weather?.temp ?? 25,

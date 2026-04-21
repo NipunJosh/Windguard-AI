@@ -47,8 +47,16 @@ class ChatContext(BaseModel):
     risk_level: Optional[str] = None
     loss_mw: Optional[float] = None
 
+class ForecastContext(BaseModel):
+    timestamp: str
+    loss_mw: Optional[float] = 0
+    generation_mw: Optional[float] = 0
+
 class ChatMessage(BaseModel):
     message: str
     context: Optional[ChatContext] = None
-    forecast_context: Optional[List[DashboardData]] = None
+    forecast_context: Optional[List[ForecastContext]] = None
+    plant_location: Optional[str] = "Coimbatore, IN"
+    installed_capacity_mw: Optional[float] = 50
+    transformer_capacity_mw: Optional[float] = 45
 

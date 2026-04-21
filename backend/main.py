@@ -146,6 +146,10 @@ def get_history():
 
 @app.post("/api/chat")
 async def chat_endpoint(chat_input: ChatMessage):
+    maintenance_answer = ""
+    operation_answer = ""
+    forecast_rows = []
+    
     try:
         context_str = "No LIVE telemetry data is currently available."
         if chat_input.context:
@@ -158,38 +162,72 @@ async def chat_endpoint(chat_input: ChatMessage):
             - Risk Level: {chat_input.context.risk_level}
             - Energy Loss: {chat_input.context.loss_mw} MW
             """
-            
-        maintenance_answer = ""
-        operation_answer = ""
         
-        if chat_input.forecast_context:
-            forecast_rows = []
-            for item in chat_input.forecast_context:
-                # Use direct fields if available (Clean Payload), fallback to 0
-                loss_val = getattr(item, 'loss_mw', 0) or 0
-                gen_val = getattr(item, 'generation_mw', 0) or 0
-                
-                try:
-                    from datetime import datetime, timedelta
-                    # Handle both space and T formats
-                    ts = item.timestamp.replace(" ", "T")
-                    dt = datetime.fromisoformat(ts)
-                    dt_end = dt + timedelta(hours=3)
-                    time_window = f"{dt.strftime('%d %b %Y')} {dt.strftime('%H:%M')} to {dt_end.strftime('%H:%M')}"
-                except Exception:
-                    time_window = item.timestamp
-                forecast_rows.append({"window": time_window, "loss_mw": loss_val, "gen_mw": gen_val})
+        # --- SERVER-SIDE FORECAST: compute energy loss for each 3hr window independently ---
+        # This ensures the chatbot always has real data regardless of frontend payload
+        try:
+            plant_loc = chat_input.plant_location or "Coimbatore, IN"
+            capacity_mw = chat_input.installed_capacity_mw or 50
+            transformer_mw = chat_input.transformer_capacity_mw or 45
             
-            if forecast_rows:
-                best = max(forecast_rows, key=lambda x: (x["loss_mw"] or 0))
-                worst = min(forecast_rows, key=lambda x: (x["loss_mw"] or 0))
+            forecasts = await weather_service.get_forecast(plant_loc)
+            hist_df = db_service.get_recent_records(168)
+            
+            for f in forecasts:
+                dt = datetime.fromisoformat(f["timestamp"].replace(" ", "T"))
+                gen_mw = calculator.calculate_generation(f["wind_speed"], capacity_mw)
+                
+                demand_feats = pipeline.create_demand_features(dt, hist_df)
+                demand_pred_scaled = float(loader.predict("demand_model", demand_feats)[0])
+                scaler = loader.models.get("demand_scaler")
+                demand_pred_mw = float(scaler.inverse_transform([[demand_pred_scaled]])[0][0]) if scaler else demand_pred_scaled
+                
+                loss_feats = pipeline.create_loss_features(dt, f, demand_pred_scaled, demand_pred_mw, gen_mw, hist_df)
+                log_loss_raw = float(loader.predict("loss_reg_model", loss_feats)[0])
+                loss_mw = max(0, float(np.expm1(log_loss_raw)))
+                
+                constraints = calculator.check_constraints(gen_mw, transformer_mw)
+                total_loss_mw = loss_mw + constraints["curtailment_required"]
+                
+                dt_end = dt + timedelta(hours=3)
+                time_window = f"{dt.strftime('%d %b %Y')} {dt.strftime('%H:%M')} to {dt_end.strftime('%H:%M')}"
+                forecast_rows.append({"window": time_window, "loss_mw": round(total_loss_mw, 2), "gen_mw": round(gen_mw, 2)})
+        
+        except Exception as fe:
+            print(f"Server-side forecast error in chat: {fe}")
+            # Fall back to frontend-provided data if server-side fails
+            if chat_input.forecast_context:
+                for item in chat_input.forecast_context:
+                    loss_val = getattr(item, 'loss_mw', 0) or 0
+                    gen_val = getattr(item, 'generation_mw', 0) or 0
+                    try:
+                        ts = item.timestamp.replace(" ", "T")
+                        dt = datetime.fromisoformat(ts)
+                        dt_end = dt + timedelta(hours=3)
+                        time_window = f"{dt.strftime('%d %b %Y')} {dt.strftime('%H:%M')} to {dt_end.strftime('%H:%M')}"
+                    except Exception:
+                        time_window = item.timestamp
+                    forecast_rows.append({"window": time_window, "loss_mw": loss_val, "gen_mw": gen_val})
+        
+        # Build maintenance/operation answers only if there is meaningful variation in loss
+        if forecast_rows:
+            max_loss = max(r["loss_mw"] for r in forecast_rows)
+            min_loss = min(r["loss_mw"] for r in forecast_rows)
+            
+            best = max(forecast_rows, key=lambda x: x["loss_mw"])
+            worst = min(forecast_rows, key=lambda x: x["loss_mw"])
+            
+            context_str += "\n\n24-HOUR ENERGY LOSS FORECAST (server-computed):\n"
+            for row in forecast_rows:
+                context_str += f"  {row['window']}  →  Energy Loss: {row['loss_mw']:.2f} MW | Generation: {row['gen_mw']:.2f} MW\n"
+            
+            if max_loss > 0:
                 maintenance_answer = f"The best time to schedule maintenance is {best['window']} because that is when predicted energy loss is highest ({best['loss_mw']:.2f} MW), meaning the turbines are already performing poorly — ideal for planned downtime."
                 operation_answer = f"The best time for normal operation is {worst['window']} because predicted energy loss is lowest ({worst['loss_mw']:.2f} MW) — maximum generation efficiency."
-                
-                context_str += "\n\n24-HOUR ENERGY LOSS FORECAST:\n"
-                for row in forecast_rows:
-                    context_str += f"  {row['window']}  →  Energy Loss: {row['loss_mw']:.2f} MW | Generation: {row['gen_mw']:.2f} MW\n"
-            
+            else:
+                maintenance_answer = "No significant energy loss is predicted in the next 24 hours. Any window is suitable for maintenance; prefer early morning (midnight to 4 AM) when grid demand is lowest."
+                operation_answer = "Energy loss predictions are near-zero across all 24-hour windows — excellent conditions for full generation operation."
+        
         prompt = f"""You are an intelligent AI assistant for the WindGuard AI wind energy dashboard.
 
 CRITICAL RULES:
