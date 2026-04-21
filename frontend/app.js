@@ -207,10 +207,17 @@ function updateUI(data) {
         const nextDt = new Date(dt.getTime() + 3*60*60*1000);
         const fmt = (d) => `${d.getHours().toString().padStart(2,'0')}:00`;
         const dateStr = dt.toLocaleDateString('en-IN', {day:'numeric', month:'short'});
-        // If timestamp contains a dash it's an aggregate slot
-        if (data.timestamp.includes('-') && data.timestamp.includes(':00-')) {
+        
+        const timeSelect = document.getElementById('time-range-select');
+        const isLive = timeSelect && timeSelect.value === 'current';
+        
+        if (isLive) {
+            timeLabel.textContent = `⏱ VIEWING LIVE TELEMETRY: ${dateStr} | ${dt.toLocaleTimeString()}`;
+        } else if (data.timestamp.includes('-') && data.timestamp.includes(':00-')) {
+            // Aggregate slot
             timeLabel.textContent = `⏱ VIEWING FORECAST WINDOW: ${data.timestamp}`;
         } else {
+            // 3-hour Forecast slot
             timeLabel.textContent = `⏱ VIEWING FORECAST WINDOW: ${dateStr} | ${fmt(dt)} – ${fmt(nextDt)}`;
         }
         timeLabel.style.display = 'block';
