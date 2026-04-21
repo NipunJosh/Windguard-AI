@@ -35,14 +35,13 @@ async def fetch_openrouter_response(prompt: str, json_format: bool = False) -> s
                     "model": model,
                     "messages": [{"role": "user", "content": prompt}]
                 }
-                if json_format and "claude" not in model.lower():
-                    payload["response_format"] = {"type": "json_object"}
-
                 try:
                     print(f"Trying OpenRouter model: {model}...")
                     response = await client.post(OPENROUTER_API_URL, headers=headers, json=payload)
                     if response.status_code == 200:
                         return response.json()['choices'][0]['message']['content']
+                    else:
+                        print(f"OpenRouter {model} HTTP {response.status_code}: {response.text[:200]}")
                 except Exception as e:
                     print(f"OpenRouter {model} fail: {e}")
                     continue
