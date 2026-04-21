@@ -561,13 +561,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 loss_mw: activeDisplayData.kpis.find(k => k.label === 'Energy Loss')?.value ?? 0
             } : null,
             forecast_context: latestForecastData ? latestForecastData.map(d => {
-                const lossKpi = d.kpis?.find(k => k.label && k.label.includes('Loss')) || {};
-                const genKpi = d.kpis?.find(k => k.label && k.label.includes('Generation')) || {};
+                // Use exact label matches to avoid picking Revenue Loss Estimate instead of Energy Loss
+                const lossKpi = d.kpis?.find(k => k.label === 'Energy Loss');
+                const genKpi = d.kpis?.find(k => k.label === 'Wind Generation');
                 
                 return {
                     timestamp: d.timestamp,
-                    loss_mw: Number(lossKpi.value || d.revenue_loss_estimate || 0),
-                    generation_mw: Number(genKpi.value || d.generation_forecast_mw || 0)
+                    loss_mw: Number(lossKpi?.value ?? d.revenue_loss_estimate ?? 0),
+                    generation_mw: Number(genKpi?.value ?? d.generation_forecast_mw ?? 0)
                 };
             }) : null
         };
