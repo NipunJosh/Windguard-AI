@@ -120,6 +120,19 @@ async def startup_event():
 def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
+@app.get("/api/cron/sync")
+async def sync_database():
+    """Endpoint for UptimeRobot to hit hourly to populate the historical DB."""
+    try:
+        # Simulate a dashboard predict call with defaults to run the pipeline and insert to DB
+        input_data = PlantInput()
+        await predict_status(input_data)
+        return {"status": "success", "message": "Database sync completed. Records updated."}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/history")
 def get_history():
     try:
@@ -128,16 +141,16 @@ def get_history():
         if df.empty:
             return []
             
-        # Group by 6-hour buckets to avoid messy overlaps and "repeated days"
+        # Resample to Daily frequency to avoid messy labels and "repeated days"
         df.set_index('timestamp', inplace=True)
-        # Resample to 6-hour frequency, taking the mean
-        df_resampled = df.resample('6h').mean().dropna()
+        # Taking daily mean and dropping empty days to skip the gap cleanly
+        df_resampled = df.resample('1D').mean().dropna()
         
-        # Take the most recent 28 points (7 days * 4 per day)
-        df_final = df_resampled.tail(28).reset_index()
+        # Take exactly the last 7 distinct days of data
+        df_final = df_resampled.tail(7).reset_index()
         
-        # Ensure timestamp is string for JSON
-        df_final['timestamp'] = df_final['timestamp'].astype(str)
+        # Ensure timestamp is string (formatted as YYYY-MM-DD for consistency)
+        df_final['timestamp'] = df_final['timestamp'].dt.strftime('%d %b %Y')
         return df_final.to_dict(orient="records")
     except Exception as e:
         import traceback
