@@ -222,12 +222,12 @@ async def chat_endpoint(chat_input: ChatMessage):
                 context_str += f"  {row['window']}  →  Energy Loss: {row['loss_mw']:.2f} MW | Generation: {row['gen_mw']:.2f} MW\n"
             
             if max_loss > 0:
-                maintenance_answer = f"The best time to schedule maintenance is {best_maintenance['window']} because that is when predicted energy loss is highest ({best_maintenance['loss_mw']:.2f} MW), meaning the turbines are already performing poorly — ideal for planned downtime."
+                maintenance_answer = f"The best time to schedule maintenance is {best_maintenance['window']} because that is when predicted energy loss is ({best_maintenance['loss_mw']:.2f} MW), meaning the turbines are already performing poorly — ideal for planned downtime."
             else:
                 maintenance_answer = "No significant energy loss is predicted in the next 24 hours. Any window is suitable for maintenance; prefer early morning (midnight to 4 AM) when grid demand is lowest."
                 
             if max_gen > 0:
-                operation_answer = f"The best time for normal operation is {best_operation['window']} because predicted generation is highest ({best_operation['gen_mw']:.2f} MW) — maximum output efficiency."
+                operation_answer = f"The best time for normal operation is {best_operation['window']} because predicted generation is ({best_operation['gen_mw']:.2f} MW) — maximum output efficiency."
             else:
                 operation_answer = "Expected wind generation is near-zero across all 24-hour windows — grid supply will be minimal."
         
