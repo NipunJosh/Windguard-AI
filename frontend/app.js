@@ -338,8 +338,13 @@ function renderChart(historyData) {
     historyData.sort((a, b) => new Date(a.timestamp.replace(' ', 'T')) - new Date(b.timestamp.replace(' ', 'T')));
 
     const labels = historyData.map(d => {
+        // If the backend already provided a pretty string (like '26 Apr 2026'), use it directly
+        if (d.timestamp.includes(' ') && !d.timestamp.includes(':')) return d.timestamp;
+        
+        // Otherwise parse and show only the month/day (no time)
         const dt = new Date(d.timestamp.replace(' ', 'T'));
-        return `${dt.getMonth() + 1}/${dt.getDate()} ${dt.getHours()}:00`;
+        if (isNaN(dt.getTime())) return d.timestamp; // Fallback
+        return `${dt.getMonth() + 1}/${dt.getDate()}`;
     });
 
     const priceData = historyData.map(d => d.price);

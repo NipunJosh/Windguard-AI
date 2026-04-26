@@ -149,8 +149,8 @@ def get_history():
         # Take exactly the last 7 distinct days of data
         df_final = df_resampled.tail(7).reset_index()
         
-        # Ensure timestamp is string in ISO format so the frontend Date() parser doesn't fail
-        df_final['timestamp'] = df_final['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        # Format as 'Day Month Year' (e.g. 26 Apr 2026) with NO time to keep the daily view clean
+        df_final['timestamp'] = df_final['timestamp'].dt.strftime('%d %b %Y')
         return df_final.to_dict(orient="records")
     except Exception as e:
         import traceback
